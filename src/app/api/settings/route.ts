@@ -1,34 +1,65 @@
 // API Route: Manage settings (GitHub Token, Vercel Token, etc.)
+// يعمل حتى بدون MongoDB
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { SettingsModel } from '@/lib/models';
 
 export async function GET() {
   try {
-    await dbConnect();
+    const conn = await dbConnect();
+
+    if (!conn) {
+      // Demo mode - return default settings
+      return NextResponse.json({
+        id: 'demo',
+        hasGithubToken: false,
+        hasVercelToken: false,
+        githubRepo: '',
+        updatedAt: new Date().toISOString(),
+        dbConnected: false,
+      });
+    }
+
     let settings = await SettingsModel.findOne().lean();
 
     if (!settings) {
       settings = await SettingsModel.create({});
     }
 
-    // Mask sensitive tokens
     return NextResponse.json({
       id: settings._id.toString(),
       hasGithubToken: !!settings.githubToken,
       hasVercelToken: !!settings.vercelToken,
       githubRepo: settings.githubRepo,
       updatedAt: settings.updatedAt,
+      dbConnected: true,
     });
   } catch (error: any) {
     console.error('[API Settings] Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    // Return safe defaults instead of error
+    return NextResponse.json({
+      id: 'error',
+      hasGithubToken: false,
+      hasVercelToken: false,
+      githubRepo: '',
+      updatedAt: new Date().toISOString(),
+      dbConnected: false,
+    });
   }
 }
 
 export async function PUT(request: Request) {
   try {
-    await dbConnect();
+    const conn = await dbConnect();
+
+    if (!conn) {
+      return NextResponse.json({
+        success: false,
+        error: 'قاعدة البيانات غير متصلة. قم بربط MongoDB للحفظ.',
+        demo: true,
+      });
+    }
+
     const body = await request.json();
     const { githubToken, vercelToken, githubRepo } = body;
 

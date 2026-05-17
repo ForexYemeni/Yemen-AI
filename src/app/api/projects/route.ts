@@ -1,11 +1,11 @@
 // API Route: Create a new project and start the AI agent system
+// يعمل حتى بدون MongoDB (يعيد استجابة تجريبية)
 import { NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
+import dbConnect, { isMongoConfigured } from '@/lib/mongodb';
 import { ProjectModel, AgentMessageModel } from '@/lib/models';
 
 export async function POST(request: Request) {
   try {
-    await dbConnect();
     const body = await request.json();
     const { name, description, idea } = body;
 
@@ -16,7 +16,20 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create project
+    // Check if MongoDB is available
+    const conn = await dbConnect();
+
+    if (!conn) {
+      // Demo mode - return success without DB
+      return NextResponse.json({
+        success: true,
+        projectId: 'demo-' + Date.now(),
+        message: 'تم إنشاء المشروع في الوضع التجريبي. لتفعيل الحفظ، قم بربط MongoDB.',
+        demo: true,
+      }, { status: 201 });
+    }
+
+    // Create project in MongoDB
     const project = await ProjectModel.create({
       name,
       description: description || name,
@@ -62,7 +75,13 @@ export async function POST(request: Request) {
 
 export async function GET() {
   try {
-    await dbConnect();
+    const conn = await dbConnect();
+
+    if (!conn) {
+      // Demo mode - return empty projects list
+      return NextResponse.json([]);
+    }
+
     const projects = await ProjectModel.find({})
       .sort({ createdAt: -1 })
       .lean();
@@ -70,24 +89,28 @@ export async function GET() {
     // Add log and message counts
     const projectsWithCounts = await Promise.all(
       projects.map(async (project) => {
-        const { AgentLogModel } = await import('@/lib/models/AgentLog');
-        const { AgentMessageModel } = await import('@/lib/models/AgentMessage');
-        const logCount = await AgentLogModel.countDocuments({ projectId: project._id });
-        const messageCount = await AgentMessageModel.countDocuments({ projectId: project._id });
-        return {
-          ...project,
-          id: project._id.toString(),
-          _count: { logs: logCount, messages: messageCount },
-        };
+        try {
+          const logCount = await AgentLogModel.countDocuments({ projectId: project._id });
+          const messageCount = await AgentMessageModel.countDocuments({ projectId: project._id });
+          return {
+            ...project,
+            id: project._id.toString(),
+            _count: { logs: logCount, messages: messageCount },
+          };
+        } catch {
+          return {
+            ...project,
+            id: project._id.toString(),
+            _count: { logs: 0, messages: 0 },
+          };
+        }
       })
     );
 
     return NextResponse.json(projectsWithCounts);
   } catch (error: any) {
     console.error('[API] Error:', error);
-    return NextResponse.json(
-      { error: 'فشل في جلب المشاريع' },
-      { status: 500 }
-    );
+    // Return empty array instead of error to prevent client crash
+    return NextResponse.json([]);
   }
 }

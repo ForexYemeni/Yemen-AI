@@ -1,4 +1,5 @@
 // API Route: Agent status and logs for a project
+// يعمل حتى بدون MongoDB
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { ProjectModel, AgentLogModel, AgentMessageModel } from '@/lib/models';
@@ -8,8 +9,35 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await dbConnect();
+    const conn = await dbConnect();
     const { id } = await params;
+
+    if (!conn) {
+      // Demo mode - return empty project detail
+      return NextResponse.json({
+        project: {
+          id,
+          name: 'مشروع تجريبي',
+          status: 'pending',
+          idea: 'وضع تجريبي - قاعدة البيانات غير متصلة',
+          retryCount: 0,
+          repoUrl: null,
+          deployUrl: null,
+          errorLog: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+        logs: [],
+        messages: [
+          {
+            id: 'demo-msg-1',
+            role: 'system',
+            content: '⚠️ النظام يعمل في الوضع التجريبي. لتفعيل الحفظ، قم بربط MONGODB_URI.',
+            createdAt: new Date().toISOString(),
+          }
+        ],
+      });
+    }
 
     const project = await ProjectModel.findById(id).lean();
 
@@ -37,6 +65,10 @@ export async function GET(
     });
   } catch (error: any) {
     console.error('[API Agent] Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({
+      project: { id: 'error', name: 'خطأ', status: 'failed', idea: '' },
+      logs: [],
+      messages: [],
+    });
   }
 }

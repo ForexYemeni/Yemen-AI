@@ -156,6 +156,7 @@ export default function Dashboard() {
   const [settings, setSettings] = useState<Record<string, unknown> | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'completed' | 'failed'>('all');
+  const [dbConnected, setDbConnected] = useState(true);
 
   const [newName, setNewName] = useState('');
   const [newIdea, setNewIdea] = useState('');
@@ -193,8 +194,15 @@ export default function Dashboard() {
       const data = await res.json();
       setSettings(data);
       setGithubRepo(data.githubRepo || '');
+      // Track DB connection status
+      if (data.dbConnected === false) {
+        setDbConnected(false);
+      } else {
+        setDbConnected(true);
+      }
     } catch (error) {
       console.error('فشل في جلب الإعدادات:', error);
+      setDbConnected(false);
     }
   }, []);
 
@@ -539,6 +547,23 @@ export default function Dashboard() {
             </div>
           </div>
         </motion.header>
+
+        {/* ─── DB WARNING BANNER ──────────────────────────────────────── */}
+        {!dbConnected && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-amber-50 border-b border-amber-200"
+          >
+            <div className="container mx-auto px-4 py-2.5 flex items-center justify-center gap-2" dir="rtl">
+              <div className="h-5 w-5 rounded-full bg-amber-100 flex items-center justify-center">
+                <Zap className="h-3 w-3 text-amber-600" />
+              </div>
+              <span className="text-sm font-bold text-amber-800">وضع العرض فقط</span>
+              <span className="text-xs text-amber-700">— قاعدة البيانات غير متصلة. لحفظ المشاريع، أضف MONGODB_URI في إعدادات Vercel</span>
+            </div>
+          </motion.div>
+        )}
 
         {/* ─── MAIN CONTENT ─────────────────────────────────────────── */}
         <motion.main

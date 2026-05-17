@@ -1,4 +1,5 @@
 // API Route: Get/Update/Delete a specific project
+// يعمل حتى بدون MongoDB
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import { ProjectModel, AgentLogModel, AgentMessageModel } from '@/lib/models';
@@ -8,8 +9,13 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await dbConnect();
+    const conn = await dbConnect();
     const { id } = await params;
+
+    if (!conn) {
+      return NextResponse.json({ error: 'قاعدة البيانات غير متصلة' }, { status: 503 });
+    }
+
     const project = await ProjectModel.findById(id).lean();
 
     if (!project) {
@@ -42,10 +48,13 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await dbConnect();
+    const conn = await dbConnect();
     const { id } = await params;
 
-    // Delete associated logs and messages
+    if (!conn) {
+      return NextResponse.json({ error: 'قاعدة البيانات غير متصلة' }, { status: 503 });
+    }
+
     await AgentLogModel.deleteMany({ projectId: id });
     await AgentMessageModel.deleteMany({ projectId: id });
     await ProjectModel.findByIdAndDelete(id);
