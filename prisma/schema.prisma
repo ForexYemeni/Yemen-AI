@@ -1,0 +1,60 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  status      String   @default("pending") // pending, planning, building, debugging, deploying, completed, failed
+  idea        String   // the user's original idea/request
+  plan        String?  // JSON string of the execution plan
+  codeFiles   String?  // JSON string of generated code files
+  repoUrl     String?  // GitHub repo URL
+  deployUrl   String?  // Vercel deployment URL
+  errorLog    String?  // last error if any
+  retryCount  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  logs     AgentLog[]
+  messages AgentMessage[]
+}
+
+model AgentLog {
+  id        String   @id @default(cuid())
+  projectId String
+  agent     String   // planner, builder, debugger, devops
+  action    String
+  content   String
+  status    String   @default("info") // info, success, error, warning
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model AgentMessage {
+  id        String   @id @default(cuid())
+  projectId String
+  role      String   // user, planner, builder, debugger, devops, system
+  content   String
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Settings {
+  id            String   @id @default(cuid())
+  githubToken   String?
+  vercelToken   String?
+  githubRepo    String?  // default repo prefix
+  updatedAt     DateTime @updatedAt
+}
