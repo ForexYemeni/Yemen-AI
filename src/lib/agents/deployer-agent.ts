@@ -1,5 +1,7 @@
 import { BaseAgent } from './base-agent';
 import { AgentContext, CodeFile, DeployResult } from './types';
+import dbConnect from '@/lib/mongodb';
+import { SettingsModel } from '@/lib/models';
 
 export class DeployerAgent extends BaseAgent {
   type = 'deployer' as const;
@@ -118,8 +120,8 @@ export class DeployerAgent extends BaseAgent {
 
   private async getSettings(): Promise<{ githubToken?: string; vercelToken?: string } | null> {
     try {
-      const { db } = await import('@/lib/db');
-      const settings = await db.settings.findFirst();
+      await dbConnect();
+      const settings = await SettingsModel.findOne().lean();
       if (!settings) return null;
       return {
         githubToken: settings.githubToken || undefined,

@@ -1,7 +1,9 @@
 // Base Agent - Abstract class for all agents (Arabic system)
+// Uses MongoDB via Mongoose
 
 import { AgentType, AgentContext, LogStatus } from './types';
-import { db } from '@/lib/db';
+import dbConnect from '@/lib/mongodb';
+import { ProjectModel, AgentLogModel, AgentMessageModel } from '@/lib/models';
 
 export abstract class BaseAgent {
   abstract type: AgentType;
@@ -17,8 +19,13 @@ export abstract class BaseAgent {
     status: LogStatus = 'info'
   ) {
     try {
-      await db.agentLog.create({
-        data: { projectId, agent: this.type, action, content, status },
+      await dbConnect();
+      await AgentLogModel.create({
+        projectId,
+        agent: this.type,
+        action,
+        content,
+        status,
       });
     } catch (error) {
       console.error(`[سجل الوكيل] ${this.type}:`, error);
@@ -31,8 +38,11 @@ export abstract class BaseAgent {
     content: string
   ) {
     try {
-      await db.agentMessage.create({
-        data: { projectId, role, content },
+      await dbConnect();
+      await AgentMessageModel.create({
+        projectId,
+        role,
+        content,
       });
     } catch (error) {
       console.error(`[رسالة الوكيل] ${this.type}:`, error);
@@ -47,15 +57,17 @@ export abstract class BaseAgent {
     additionalData?: Record<string, any>
   ) {
     try {
-      await db.project.update({
-        where: { id: projectId },
-        data: {
+      await dbConnect();
+      await ProjectModel.findByIdAndUpdate(
+        projectId,
+        {
           status,
           progress,
           currentStep,
           ...additionalData,
         },
-      });
+        { new: true }
+      );
     } catch (error) {
       console.error(`[تحديث المشروع] ${this.type}:`, error);
     }

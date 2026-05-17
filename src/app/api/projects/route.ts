@@ -1,9 +1,11 @@
 // API Route: Create a new project and start the AI agent system
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import dbConnect from '@/lib/mongodb';
+import { ProjectModel, AgentMessageModel } from '@/lib/models';
 
 export async function POST(request: Request) {
   try {
+    await dbConnect();
     const body = await request.json();
     const { name, description, idea } = body;
 
@@ -14,31 +16,26 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create project first
-    const project = await db.project.create({
-      data: {
-        name,
-        description: description || name,
-        idea,
-        status: 'pending',
-        progress: 0,
-        currentStep: 'في الانتظار',
-      },
+    // Create project
+    const project = await ProjectModel.create({
+      name,
+      description: description || name,
+      idea,
+      status: 'pending',
+      progress: 0,
+      currentStep: 'في الانتظار',
     });
 
-    const projectId = project.id;
+    const projectId = project._id.toString();
 
     // Add initial system message
-    await db.agentMessage.create({
-      data: {
-        projectId,
-        role: 'system',
-        content: `🚀 تم بدء مشروع جديد: "${name}"\n\n💡 الفكرة: ${idea}\n\nسيعمل نظام الوكلاء الذكي الآن بشكل ذاتي.`,
-      },
+    await AgentMessageModel.create({
+      projectId: project._id,
+      role: 'system',
+      content: `🚀 تم بدء مشروع جديد: "${name}"\n\n💡 الفكرة: ${idea}\n\nسيعمل نظام الوكلاء الذكي الآن بشكل ذاتي.`,
     });
 
     // Start the autonomous agent system in background (non-blocking)
-    // Use dynamic import to avoid blocking the response
     import('@/lib/agents/orchestrator').then(async ({ orchestrator }) => {
       try {
         await orchestrator.execute({ name, description: description || name, idea });
@@ -65,16 +62,27 @@ export async function POST(request: Request) {
 
 export async function GET() {
   try {
-    const projects = await db.project.findMany({
-      orderBy: { createdAt: 'desc' },
-      include: {
-        _count: {
-          select: { logs: true, messages: true },
-        },
-      },
-    });
+    await dbConnect();
+    const projects = await ProjectModel.find({})
+      .sort({ createdAt: -1 })
+      .lean();
 
-    return NextResponse.json(projects);
+    // Add log and message counts
+    const projectsWithCounts = await Promise.all(
+      projects.map(async (project) => {
+        const { AgentLogModel } = await import('@/lib/models/AgentLog');
+        const { AgentMessageModel } = await import('@/lib/models/AgentMessage');
+        const logCount = await AgentLogModel.countDocuments({ projectId: project._id });
+        const messageCount = await AgentMessageModel.countDocuments({ projectId: project._id });
+        return {
+          ...project,
+          id: project._id.toString(),
+          _count: { logs: logCount, messages: messageCount },
+        };
+      })
+    );
+
+    return NextResponse.json(projectsWithCounts);
   } catch (error: any) {
     console.error('[API] Error:', error);
     return NextResponse.json(

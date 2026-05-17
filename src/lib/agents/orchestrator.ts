@@ -1,5 +1,6 @@
 // Agent Orchestrator - محرك التنسيق الذكي (15 Agents)
 // ينفذ حلقة ذاتية: تحليل → تصميم → تطوير → مراجعة → اختبار → تحسين → أمان → SEO → توثيق → نشر
+// Uses MongoDB via Mongoose
 
 import { AnalyzerAgent } from './analyzer-agent';
 import { ArchitectAgent } from './architect-agent';
@@ -17,7 +18,8 @@ import { SeoAgent } from './seo-agent';
 import { DocumenterAgent } from './documenter-agent';
 import { DeployerAgent } from './deployer-agent';
 import { AgentContext, ProjectIdea } from './types';
-import { db } from '@/lib/db';
+import dbConnect from '@/lib/mongodb';
+import { ProjectModel, AgentMessageModel } from '@/lib/models';
 
 export class AgentOrchestrator {
   private analyzer: AnalyzerAgent;
@@ -55,45 +57,39 @@ export class AgentOrchestrator {
   }
 
   async execute(idea: ProjectIdea): Promise<string> {
-    const project = await db.project.create({
-      data: {
-        name: idea.name,
-        description: idea.description,
-        idea: idea.idea,
-        status: 'pending',
-        progress: 0,
-        currentStep: 'في الانتظار',
-      },
+    await dbConnect();
+
+    const project = await ProjectModel.create({
+      name: idea.name,
+      description: idea.description,
+      idea: idea.idea,
+      status: 'pending',
+      progress: 0,
+      currentStep: 'في الانتظار',
     });
 
-    const projectId = project.id;
+    const projectId = project._id.toString();
 
-    await db.agentMessage.create({
-      data: {
-        projectId,
-        role: 'system',
-        content: `🚀 تم بدء مشروع جديد: "${idea.name}"\n\n💡 الفكرة: ${idea.idea}\n\nسيعمل نظام الوكلاء الذكي الآن بشكل ذاتي عبر 15 مرحلة:\n1️⃣ تحليل المتطلبات\n2️⃣ تصميم البنية\n3️⃣ تصميم الواجهات\n4️⃣ تطوير الواجهة الأمامية\n5️⃣ تطوير الخلفية\n6️⃣ بناء قاعدة البيانات\n7️⃣ البناء المتكامل\n8️⃣ مراجعة الكود\n9️⃣ اختبار الجودة\n🔟 إصلاح الأخطاء (عند الحاجة)\n1️⃣1️⃣ تحسين الأداء\n1️⃣2️⃣ فحص الأمان\n1️⃣3️⃣ تحسين SEO\n1️⃣4️⃣ التوثيق\n1️⃣5️⃣ النشر والرفع`,
-      },
+    await AgentMessageModel.create({
+      projectId: project._id,
+      role: 'system',
+      content: `🚀 تم بدء مشروع جديد: "${idea.name}"\n\n💡 الفكرة: ${idea.idea}\n\nسيعمل نظام الوكلاء الذكي الآن بشكل ذاتي عبر 15 مرحلة:\n1️⃣ تحليل المتطلبات\n2️⃣ تصميم البنية\n3️⃣ تصميم الواجهات\n4️⃣ تطوير الواجهة الأمامية\n5️⃣ تطوير الخلفية\n6️⃣ بناء قاعدة البيانات\n7️⃣ البناء المتكامل\n8️⃣ مراجعة الكود\n9️⃣ اختبار الجودة\n🔟 إصلاح الأخطاء (عند الحاجة)\n1️⃣1️⃣ تحسين الأداء\n1️⃣2️⃣ فحص الأمان\n1️⃣3️⃣ تحسين SEO\n1️⃣4️⃣ التوثيق\n1️⃣5️⃣ النشر والرفع`,
     });
 
     // Start autonomous loop in background
     this.runAutonomousLoop(projectId, idea).catch(async (error) => {
       console.error('[منسق الوكلاء] خطأ فادح:', error);
-      await db.project.update({
-        where: { id: projectId },
-        data: {
-          status: 'failed',
-          errorLog: `خطأ فادح: ${error.message}`,
-          progress: 0,
-          currentStep: 'فشل',
-        },
+      await dbConnect();
+      await ProjectModel.findByIdAndUpdate(projectId, {
+        status: 'failed',
+        errorLog: `خطأ فادح: ${error.message}`,
+        progress: 0,
+        currentStep: 'فشل',
       });
-      await db.agentMessage.create({
-        data: {
-          projectId,
-          role: 'system',
-          content: `❌ حدث خطأ فادح: ${error.message}. يرجى المحاولة مرة أخرى.`,
-        },
+      await AgentMessageModel.create({
+        projectId,
+        role: 'system',
+        content: `❌ حدث خطأ فادح: ${error.message}. يرجى المحاولة مرة أخرى.`,
       });
     });
 
@@ -143,8 +139,10 @@ export class AgentOrchestrator {
         console.log(`[منسق] مرحلة إصلاح: تصحيح الأخطاء - ${projectId}`);
         context = await this.debugger.execute(context);
         if (!context.errorLog) {
-          await db.agentMessage.create({
-            data: { projectId, role: 'system', content: '🔄 إعادة البناء بعد إصلاح الأخطاء...' },
+          await AgentMessageModel.create({
+            projectId,
+            role: 'system',
+            content: '🔄 إعادة البناء بعد إصلاح الأخطاء...',
           });
           context = await this.developer.execute(context);
         }
@@ -163,8 +161,10 @@ export class AgentOrchestrator {
 
         // إذا فشلت الاختبارات، حاول الإصلاح
         if (context.errorLog && context.retryCount < context.maxRetries) {
-          await db.agentMessage.create({
-            data: { projectId, role: 'system', content: '🔧 فشلت بعض الاختبارات - جاري الإصلاح التلقائي...' },
+          await AgentMessageModel.create({
+            projectId,
+            role: 'system',
+            content: '🔧 فشلت بعض الاختبارات - جاري الإصلاح التلقائي...',
           });
           context = await this.debugger.execute(context);
           if (!context.errorLog) {
@@ -213,8 +213,10 @@ export class AgentOrchestrator {
       } else {
         // حلقة إصلاح ذاتية نهائية
         while (context.errorLog && context.retryCount < context.maxRetries) {
-          await db.agentMessage.create({
-            data: { projectId, role: 'system', content: `🔄 محاولة إصلاح نهائية ${context.retryCount + 1}/${context.maxRetries}...` },
+          await AgentMessageModel.create({
+            projectId,
+            role: 'system',
+            content: `🔄 محاولة إصلاح نهائية ${context.retryCount + 1}/${context.maxRetries}...`,
           });
           context = await this.debugger.execute(context);
 
@@ -233,24 +235,25 @@ export class AgentOrchestrator {
           context = await this.documenter.execute(context);
           context = await this.deployer.execute(context);
         } else {
-          await db.project.update({
-            where: { id: projectId },
-            data: { status: 'failed', currentStep: 'فشل' },
+          await dbConnect();
+          await ProjectModel.findByIdAndUpdate(projectId, {
+            status: 'failed',
+            currentStep: 'فشل',
           });
-          await db.agentMessage.create({
-            data: {
-              projectId,
-              role: 'system',
-              content: `❌ لم يتم إكمال المشروع بعد ${context.maxRetries} محاولات إصلاح. يرجى مراجعة الأخطاء.`,
-            },
+          await AgentMessageModel.create({
+            projectId,
+            role: 'system',
+            content: `❌ لم يتم إكمال المشروع بعد ${context.maxRetries} محاولات إصلاح. يرجى مراجعة الأخطاء.`,
           });
         }
       }
     } catch (error: any) {
       console.error(`[منسق] خطأ:`, error);
-      await db.project.update({
-        where: { id: projectId },
-        data: { status: 'failed', errorLog: error.message, currentStep: 'فشل' },
+      await dbConnect();
+      await ProjectModel.findByIdAndUpdate(projectId, {
+        status: 'failed',
+        errorLog: error.message,
+        currentStep: 'فشل',
       });
     }
   }

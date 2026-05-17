@@ -1,44 +1,44 @@
 // API Route: Manage settings (GitHub Token, Vercel Token, etc.)
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import dbConnect from '@/lib/mongodb';
+import { SettingsModel } from '@/lib/models';
 
 export async function GET() {
   try {
-    let settings = await db.settings.findFirst();
+    await dbConnect();
+    let settings = await SettingsModel.findOne().lean();
 
     if (!settings) {
-      settings = await db.settings.create({
-        data: {},
-      });
+      settings = await SettingsModel.create({});
     }
 
     // Mask sensitive tokens
     return NextResponse.json({
-      id: settings.id,
+      id: settings._id.toString(),
       hasGithubToken: !!settings.githubToken,
       hasVercelToken: !!settings.vercelToken,
       githubRepo: settings.githubRepo,
       updatedAt: settings.updatedAt,
     });
   } catch (error: any) {
+    console.error('[API Settings] Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
 export async function PUT(request: Request) {
   try {
+    await dbConnect();
     const body = await request.json();
     const { githubToken, vercelToken, githubRepo } = body;
 
-    let settings = await db.settings.findFirst();
+    let settings = await SettingsModel.findOne();
 
     if (!settings) {
-      settings = await db.settings.create({
-        data: {
-          githubToken: githubToken || undefined,
-          vercelToken: vercelToken || undefined,
-          githubRepo: githubRepo || undefined,
-        },
+      settings = await SettingsModel.create({
+        githubToken: githubToken || undefined,
+        vercelToken: vercelToken || undefined,
+        githubRepo: githubRepo || undefined,
       });
     } else {
       const updateData: Record<string, any> = {};
@@ -46,19 +46,21 @@ export async function PUT(request: Request) {
       if (vercelToken !== undefined) updateData.vercelToken = vercelToken || null;
       if (githubRepo !== undefined) updateData.githubRepo = githubRepo || null;
 
-      settings = await db.settings.update({
-        where: { id: settings.id },
-        data: updateData,
-      });
+      settings = await SettingsModel.findByIdAndUpdate(
+        settings._id,
+        updateData,
+        { new: true }
+      );
     }
 
     return NextResponse.json({
       success: true,
-      hasGithubToken: !!settings.githubToken,
-      hasVercelToken: !!settings.vercelToken,
-      githubRepo: settings.githubRepo,
+      hasGithubToken: !!settings?.githubToken,
+      hasVercelToken: !!settings?.vercelToken,
+      githubRepo: settings?.githubRepo,
     });
   } catch (error: any) {
+    console.error('[API Settings] Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

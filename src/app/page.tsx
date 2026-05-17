@@ -170,10 +170,17 @@ export default function Dashboard() {
   const fetchProjects = useCallback(async () => {
     try {
       const res = await fetch('/api/projects');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      setProjects(data);
+      if (Array.isArray(data)) {
+        setProjects(data);
+      } else {
+        console.error('استجابة غير متوقعة من الخادم:', data);
+        setProjects([]);
+      }
     } catch (error) {
       console.error('فشل في جلب المشاريع:', error);
+      setProjects([]);
     } finally {
       setLoading(false);
     }
@@ -182,6 +189,7 @@ export default function Dashboard() {
   const fetchSettings = useCallback(async () => {
     try {
       const res = await fetch('/api/settings');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setSettings(data);
       setGithubRepo(data.githubRepo || '');
@@ -205,10 +213,13 @@ export default function Dashboard() {
     const interval = setInterval(async () => {
       try {
         const res = await fetch(`/api/agent/${selectedProject.project.id}`);
+        if (!res.ok) return;
         const data = await res.json();
-        setSelectedProject(data);
+        if (data && data.project) {
+          setSelectedProject(data);
+        }
       } catch (error) {
-        console.error('فشل في تحديث المشروع:', error);
+        // Silently ignore polling errors
       }
     }, 3000);
     return () => clearInterval(interval);

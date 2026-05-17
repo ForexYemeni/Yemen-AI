@@ -1,32 +1,37 @@
 // API Route: Get/Update/Delete a specific project
 import { NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import dbConnect from '@/lib/mongodb';
+import { ProjectModel, AgentLogModel, AgentMessageModel } from '@/lib/models';
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await dbConnect();
     const { id } = await params;
-    const project = await db.project.findUnique({
-      where: { id },
-      include: {
-        logs: {
-          orderBy: { createdAt: 'desc' },
-          take: 100,
-        },
-        messages: {
-          orderBy: { createdAt: 'asc' },
-          take: 200,
-        },
-      },
-    });
+    const project = await ProjectModel.findById(id).lean();
 
     if (!project) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
-    return NextResponse.json(project);
+    const logs = await AgentLogModel.find({ projectId: id })
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .lean();
+
+    const messages = await AgentMessageModel.find({ projectId: id })
+      .sort({ createdAt: 1 })
+      .limit(200)
+      .lean();
+
+    return NextResponse.json({
+      ...project,
+      id: project._id.toString(),
+      logs: logs.map(l => ({ ...l, id: l._id.toString() })),
+      messages: messages.map(m => ({ ...m, id: m._id.toString() })),
+    });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -37,8 +42,14 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await dbConnect();
     const { id } = await params;
-    await db.project.delete({ where: { id } });
+
+    // Delete associated logs and messages
+    await AgentLogModel.deleteMany({ projectId: id });
+    await AgentMessageModel.deleteMany({ projectId: id });
+    await ProjectModel.findByIdAndDelete(id);
+
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
