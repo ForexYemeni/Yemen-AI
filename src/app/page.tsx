@@ -6,7 +6,7 @@ import {
   Brain, Palette, Monitor, Server, Database, Bell, ShieldCheck, Rocket,
   Plus, Search, Settings, Trash2, Play, RefreshCw, X, CheckCircle2,
   AlertCircle, Clock, Loader2, FileCode, MessageSquare, BarChart3,
-  ChevronLeft, Eye, Zap, FolderOpen
+  ChevronLeft, Eye, Zap, FolderOpen, Shield, ThumbsUp, ThumbsDown
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -22,7 +22,7 @@ import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveCo
 // Types
 // ============================================================
 type AgentType = 'project_manager' | 'ui_ux' | 'frontend' | 'backend' | 'db_guidance' | 'notifications' | 'qa_debug' | 'devops';
-type ProjectStatus = 'pending' | 'analyzing' | 'planning' | 'designing' | 'frontend_dev' | 'backend_dev' | 'db_setup' | 'notifications_setup' | 'testing' | 'debugging' | 'deploying' | 'completed' | 'failed';
+type ProjectStatus = 'pending' | 'analyzing' | 'planning' | 'designing' | 'frontend_dev' | 'backend_dev' | 'db_setup' | 'notifications_setup' | 'testing' | 'debugging' | 'pending_approval' | 'deploying' | 'completed' | 'failed';
 
 interface Project {
   id: string;
@@ -88,6 +88,7 @@ const STATUS_LABELS: Record<string, string> = {
   notifications_setup: 'إعداد الإشعارات',
   testing: 'جاري الاختبار',
   debugging: 'إصلاح الأخطاء',
+  pending_approval: 'بانتظار الموافقة',
   deploying: 'جاري النشر',
   completed: 'مكتمل',
   failed: 'فشل',
@@ -104,6 +105,7 @@ const STATUS_COLORS: Record<string, string> = {
   notifications_setup: 'bg-rose-50 text-rose-700 border-rose-200',
   testing: 'bg-orange-50 text-orange-700 border-orange-200',
   debugging: 'bg-red-50 text-red-700 border-red-200',
+  pending_approval: 'bg-yellow-50 text-yellow-800 border-yellow-300',
   deploying: 'bg-indigo-50 text-indigo-700 border-indigo-200',
   completed: 'bg-green-50 text-green-700 border-green-200',
   failed: 'bg-red-50 text-red-800 border-red-200',
@@ -124,6 +126,7 @@ export default function AgentFactoryDashboard() {
   const [settings, setSettings] = useState({ githubToken: '', vercelToken: '', githubRepo: '' });
   const [isCreating, setIsCreating] = useState(false);
   const [activeAgents, setActiveAgents] = useState<Set<AgentType>>(new Set());
+  const [isApproving, setIsApproving] = useState(false);
 
   // Fetch projects
   const fetchProjects = useCallback(async () => {
@@ -229,6 +232,32 @@ export default function AgentFactoryDashboard() {
       body: JSON.stringify(settings),
     });
     setShowSettings(false);
+  };
+
+  // Approve project — user explicitly approves design/code before deployment
+  const handleApprove = async (projectId: string) => {
+    setIsApproving(true);
+    try {
+      await fetch(`/api/projects/${projectId}/approve`, { method: 'POST' });
+      fetchProjects();
+      fetchProjectDetail();
+    } catch {}
+    setIsApproving(false);
+  };
+
+  // Reject project — user rejects, nothing gets uploaded
+  const handleReject = async (projectId: string) => {
+    setIsApproving(true);
+    try {
+      await fetch(`/api/projects/${projectId}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'لم يوافق المستخدم على التصميم' }),
+      });
+      fetchProjects();
+      if (selectedProjectId === projectId) setSelectedProjectId(null);
+    } catch {}
+    setIsApproving(false);
   };
 
   // Filter projects
@@ -581,6 +610,16 @@ export default function AgentFactoryDashboard() {
                               <RefreshCw className="w-3 h-3 ml-1" /> إعادة
                             </Button>
                           )}
+                          {project.status === 'pending_approval' && (
+                            <>
+                              <Button size="sm" onClick={e => { e.stopPropagation(); handleApprove(project.id); }} className="text-xs bg-green-600 hover:bg-green-700" disabled={isApproving}>
+                                <CheckCircle2 className="w-3 h-3 ml-1" /> موافقة
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={e => { e.stopPropagation(); handleReject(project.id); }} className="text-xs border-red-300 text-red-600" disabled={isApproving}>
+                                <X className="w-3 h-3 ml-1" /> رفض
+                              </Button>
+                            </>
+                          )}
                           <Button size="sm" variant="ghost" onClick={e => { e.stopPropagation(); setSelectedProjectId(project.id); }} className="text-xs">
                             <Eye className="w-3 h-3 ml-1" /> تفاصيل
                           </Button>
@@ -622,6 +661,46 @@ export default function AgentFactoryDashboard() {
                   </div>
                 </CardHeader>
                 <CardContent>
+                  {/* ============ APPROVAL BANNER ============ */}
+                  {detailProject.status === 'pending_approval' && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="mb-4 p-4 rounded-xl bg-gradient-to-l from-yellow-50 to-amber-50 border-2 border-yellow-300"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-full bg-yellow-400 flex items-center justify-center flex-shrink-0">
+                          <AlertCircle className="w-5 h-5 text-yellow-900" />
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="font-bold text-yellow-900 text-base mb-1">بانتظار موافقتك على التصميم والكود</h3>
+                          <p className="text-yellow-800 text-sm mb-3">
+                            تم إنشاء جميع الملفات والكود. راجع التصميم من تبويب الكود ثم اضغط موافقة للنشر أو رفض لإلغاء. <strong>لا يتم رفع أي شيء بدون موافقتك.</strong>
+                          </p>
+                          <div className="flex gap-2">
+                            <Button
+                              onClick={() => handleApprove(selectedProjectId!)}
+                              className="bg-green-600 hover:bg-green-700"
+                              disabled={isApproving}
+                            >
+                              {isApproving ? <Loader2 className="w-4 h-4 ml-1 animate-spin" /> : <CheckCircle2 className="w-4 h-4 ml-1" />}
+                              موافقة ونشر على GitHub + Vercel
+                            </Button>
+                            <Button
+                              variant="outline"
+                              onClick={() => handleReject(selectedProjectId!)}
+                              className="border-red-300 text-red-600 hover:bg-red-50"
+                              disabled={isApproving}
+                            >
+                              <X className="w-4 h-4 ml-1" />
+                              رفض — لا يتم رفع أي كود
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+
                   <div className="mb-4">
                     <div className="flex items-center justify-between text-sm mb-1">
                       <span>التقدم</span>

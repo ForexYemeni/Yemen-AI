@@ -10,12 +10,28 @@ import { addLog, generateLogId, runtimeStore } from '../runtime/memory';
 export async function runDevOpsAgent(ctx: SharedContext): Promise<void> {
   const projectId = ctx.projectId;
 
+  // CRITICAL: This agent should ONLY run after user approval
+  // The orchestrator ensures this by splitting the pipeline into pre-approval and post-approval
+  const project = runtimeStore.projects.get(projectId);
+  if (project && project.status !== 'deploying') {
+    addLog(projectId, {
+      id: generateLogId(),
+      projectId,
+      agent: 'devops',
+      action: 'blocked',
+      content: '⛔ تم حظر النشر — يجب موافقة المستخدم أولاً!',
+      status: 'error',
+      timestamp: new Date().toISOString(),
+    });
+    throw new Error('لا يمكن النشر بدون موافقة المستخدم');
+  }
+
   addLog(projectId, {
     id: generateLogId(),
     projectId,
     agent: 'devops',
     action: 'start_devops',
-    content: 'بدأ إعداد CI/CD والنشر...',
+    content: '✅ تمت الموافقة — بدأ إعداد CI/CD والنشر...',
     status: 'running',
     timestamp: new Date().toISOString(),
   });

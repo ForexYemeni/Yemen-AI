@@ -24,6 +24,7 @@ export type ProjectStatus =
   | 'notifications_setup'
   | 'testing'
   | 'debugging'
+  | 'pending_approval'
   | 'deploying'
   | 'completed'
   | 'failed';
@@ -204,6 +205,7 @@ export const STATUS_LABELS_AR: Record<ProjectStatus, string> = {
   notifications_setup: 'إعداد الإشعارات',
   testing: 'جاري الاختبار',
   debugging: 'إصلاح الأخطاء',
+  pending_approval: 'بانتظار الموافقة',
   deploying: 'جاري النشر',
   completed: 'مكتمل',
   failed: 'فشل',
@@ -220,6 +222,7 @@ export const STATUS_COLORS: Record<ProjectStatus, string> = {
   notifications_setup: 'bg-rose-100 text-rose-700',
   testing: 'bg-orange-100 text-orange-700',
   debugging: 'bg-red-100 text-red-700',
+  pending_approval: 'bg-yellow-100 text-yellow-800 border-yellow-300',
   deploying: 'bg-indigo-100 text-indigo-700',
   completed: 'bg-green-100 text-green-700',
   failed: 'bg-red-100 text-red-800',

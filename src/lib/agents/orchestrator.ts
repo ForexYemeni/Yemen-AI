@@ -1,5 +1,6 @@
 // ============================================================
 // Master Orchestrator — ينسق جميع الوكلاء ويدار خط الإنتاج
+// IMPORTANT: يتوقف عند مرحلة الموافقة — لا نشر بدون موافقة المستخدم
 // ============================================================
 
 import {
@@ -50,6 +51,22 @@ const AGENT_STATUS_MAP: Record<AgentType, ProjectStatus> = {
   devops: 'deploying',
 };
 
+// Pipeline stages BEFORE user approval (no deployment)
+const PRE_APPROVAL_AGENTS: AgentType[] = [
+  'project_manager',
+  'ui_ux',
+  'frontend',
+  'backend',
+  'db_guidance',
+  'notifications',
+  'qa_debug',
+];
+
+// DevOps is the POST-approval agent (only runs after user approval)
+const POST_APPROVAL_AGENTS: AgentType[] = [
+  'devops',
+];
+
 export async function orchestrate(
   projectId: string,
   mode: 'new' | 'existing',
@@ -73,33 +90,91 @@ export async function orchestrate(
     id: generateMsgId(),
     projectId,
     role: 'system',
-    content: mode === 'new' ? '🚀 بدأ خط إنتاج مشروع جديد' : '🔄 بدأ تحليل وتحسين مشروع موجود',
+    content: '🚀 بدأ خط إنتاج المشروع — سيتم عرض التصميم للموافقة قبل النشر',
     timestamp: new Date().toISOString(),
   });
 
   try {
-    if (mode === 'new') {
-      await runNewProjectPipeline(ctx, projectId);
-    } else {
-      await runExistingProjectPipeline(ctx, projectId);
+    // Run all agents EXCEPT DevOps (pre-approval pipeline)
+    const pipeline = mode === 'new'
+      ? PRE_APPROVAL_AGENTS
+      : ['project_manager', 'backend', 'qa_debug'] as AgentType[];
+
+    for (const agentType of pipeline) {
+      // Skip DB if not needed (check after PM runs)
+      if (agentType === 'db_guidance' && !ctx.needsDatabase) {
+        addLog(projectId, {
+          id: generateLogId(),
+          projectId,
+          agent: 'db_guidance',
+          action: 'skipped',
+          content: 'تم تخطي مستشار البيانات — لا حاجة لقاعدة بيانات',
+          status: 'warning',
+          timestamp: new Date().toISOString(),
+        });
+        continue;
+      }
+
+      if (agentType === 'notifications' && !ctx.needsNotifications) {
+        addLog(projectId, {
+          id: generateLogId(),
+          projectId,
+          agent: 'notifications',
+          action: 'skipped',
+          content: 'تم تخطي مهندس الإشعارات — لا حاجة للإشعارات',
+          status: 'warning',
+          timestamp: new Date().toISOString(),
+        });
+        continue;
+      }
+
+      const status = AGENT_STATUS_MAP[agentType];
+      updateProject(projectId, {
+        status,
+        currentStep: `وكيل: ${agentType}`,
+      });
+
+      addLog(projectId, {
+        id: generateLogId(),
+        projectId,
+        agent: agentType,
+        action: 'agent_start',
+        content: `بدأ تشغيل الوكيل ${agentType}`,
+        status: 'running',
+        timestamp: new Date().toISOString(),
+      });
+
+      const runner = AGENT_RUNNERS[agentType];
+      await runAgentWithRetry(ctx, agentType, runner, projectId);
     }
 
-    // Mark project as completed
+    // ============================================================
+    // STOP HERE — Wait for user approval before deployment
+    // ============================================================
     updateProject(projectId, {
-      status: 'completed',
-      progress: 100,
-      currentStep: 'مكتمل',
-      repoUrl: (ctx.getAgentResult('devops') as Record<string, unknown>)?.repoUrl as string | undefined,
-      deployUrl: (ctx.getAgentResult('devops') as Record<string, unknown>)?.deployUrl as string | undefined,
+      status: 'pending_approval',
+      progress: 90,
+      currentStep: 'بانتظار موافقة المستخدم على التصميم والكود',
     });
 
     addMessage(projectId, {
       id: generateMsgId(),
       projectId,
       role: 'system',
-      content: '✅ تم إنجاز المشروع بنجاح!',
+      content: '⏸️ تم إيقاف النشر — راجع التصميم والكود ووافق عليه قبل الرفع. لا يتم رفع أي شيء بدون موافقتك.',
       timestamp: new Date().toISOString(),
     });
+
+    addLog(projectId, {
+      id: generateLogId(),
+      projectId,
+      agent: 'devops',
+      action: 'waiting_approval',
+      content: '⏸️ بانتظار موافقة المستخدم — لن يتم الرفع إلى GitHub أو Vercel بدون موافقتك',
+      status: 'warning',
+      timestamp: new Date().toISOString(),
+    });
+
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : 'خطأ غير معروف';
     updateProject(projectId, {
@@ -117,93 +192,115 @@ export async function orchestrate(
   }
 }
 
-async function runNewProjectPipeline(ctx: SharedContext, projectId: string): Promise<void> {
-  // Pipeline: PM → UI/UX → Frontend → Backend → DB (if needed) → Notifications (if needed) → QA → DevOps
-  const pipeline: AgentType[] = [
-    'project_manager',
-    'ui_ux',
-    'frontend',
-    'backend',
-  ];
+// ============================================================
+// Continue orchestration after user approval
+// ============================================================
+export async function orchestrateDeploy(projectId: string): Promise<void> {
+  const project = runtimeStore.projects.get(projectId);
+  if (!project) {
+    throw new Error('المشروع غير موجود');
+  }
 
-  // Conditionally add DB and Notifications agents
-  // We'll check after PM analysis to determine if needed
-  // For now, always include them but they check needs internally
-  const needsDb = true; // Will be refined after PM runs
-  const needsNotif = true;
+  if (project.status !== 'pending_approval') {
+    throw new Error('المشروع ليس في حالة انتظار الموافقة');
+  }
 
-  if (needsDb) pipeline.push('db_guidance');
-  if (needsNotif) pipeline.push('notifications');
-  pipeline.push('qa_debug', 'devops');
+  const ctx = runtimeStore.sharedContexts.get(projectId);
+  if (!ctx) {
+    throw new Error('لا يوجد سياق مشترك لهذا المشروع');
+  }
 
-  for (const agentType of pipeline) {
-    // Skip DB if not needed (check after PM runs)
-    if (agentType === 'db_guidance' && !ctx.needsDatabase) {
-      addLog(projectId, {
-        id: generateLogId(),
-        projectId,
-        agent: 'db_guidance',
-        action: 'skipped',
-        content: 'تم تخطي مستشار البيانات — لا حاجة لقاعدة بيانات',
-        status: 'warning',
-        timestamp: new Date().toISOString(),
-      });
-      continue;
-    }
+  updateProject(projectId, {
+    status: 'deploying',
+    currentStep: 'جاري النشر بعد الموافقة...',
+  });
 
-    if (agentType === 'notifications' && !ctx.needsNotifications) {
-      addLog(projectId, {
-        id: generateLogId(),
-        projectId,
-        agent: 'notifications',
-        action: 'skipped',
-        content: 'تم تخطي مهندس الإشعارات — لا حاجة للإشعارات',
-        status: 'warning',
-        timestamp: new Date().toISOString(),
-      });
-      continue;
-    }
+  addMessage(projectId, {
+    id: generateMsgId(),
+    projectId,
+    role: 'system',
+    content: '✅ وافق المستخدم — بدأ النشر على GitHub و Vercel',
+    timestamp: new Date().toISOString(),
+  });
 
-    const status = AGENT_STATUS_MAP[agentType];
+  addLog(projectId, {
+    id: generateLogId(),
+    projectId,
+    agent: 'devops',
+    action: 'approval_received',
+    content: '✅ تمت الموافقة — بدأ النشر',
+    status: 'success',
+    timestamp: new Date().toISOString(),
+  });
+
+  try {
+    // Run DevOps agent
+    await runDevOpsAgent(ctx);
+
+    // Mark project as completed
     updateProject(projectId, {
-      status,
-      currentStep: `وكيل: ${agentType}`,
+      status: 'completed',
+      progress: 100,
+      currentStep: 'مكتمل',
+      repoUrl: (ctx.getAgentResult('devops') as Record<string, unknown>)?.repoUrl as string | undefined,
+      deployUrl: (ctx.getAgentResult('devops') as Record<string, unknown>)?.deployUrl as string | undefined,
     });
 
-    addLog(projectId, {
-      id: generateLogId(),
+    addMessage(projectId, {
+      id: generateMsgId(),
       projectId,
-      agent: agentType,
-      action: 'agent_start',
-      content: `بدأ تشغيل الوكيل ${agentType}`,
-      status: 'running',
+      role: 'system',
+      content: '🎉 تم إنجاز المشروع ونشره بنجاح!',
       timestamp: new Date().toISOString(),
     });
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : 'خطأ غير معروف';
+    updateProject(projectId, {
+      status: 'failed',
+      currentStep: `فشل النشر: ${errMsg}`,
+    });
 
-    const runner = AGENT_RUNNERS[agentType];
-    await runAgentWithRetry(ctx, agentType, runner, projectId);
+    addMessage(projectId, {
+      id: generateMsgId(),
+      projectId,
+      role: 'system',
+      content: `❌ فشل النشر: ${errMsg}`,
+      timestamp: new Date().toISOString(),
+    });
   }
 }
 
-async function runExistingProjectPipeline(ctx: SharedContext, projectId: string): Promise<void> {
-  // Pipeline for existing projects: PM (analyze) → Backend (modify) → QA → DevOps
-  const pipeline: AgentType[] = [
-    'project_manager',
-    'backend',
-    'qa_debug',
-    'devops',
-  ];
-
-  for (const agentType of pipeline) {
-    const status = AGENT_STATUS_MAP[agentType];
-    updateProject(projectId, {
-      status,
-      currentStep: `وكيل: ${agentType}`,
-    });
-
-    const runner = AGENT_RUNNERS[agentType];
-    await runAgentWithRetry(ctx, agentType, runner, projectId);
+// ============================================================
+// Reject project — user disapproves the design
+// ============================================================
+export async function rejectProject(projectId: string, reason?: string): Promise<void> {
+  const project = runtimeStore.projects.get(projectId);
+  if (!project) {
+    throw new Error('المشروع غير موجود');
   }
+
+  updateProject(projectId, {
+    status: 'failed',
+    currentStep: `مرفوض: ${reason ?? 'لم يوافق المستخدم على التصميم'}`,
+  });
+
+  addMessage(projectId, {
+    id: generateMsgId(),
+    projectId,
+    role: 'system',
+    content: `🚫 رفض المستخدم المشروع: ${reason ?? 'لم يوافق على التصميم'}`,
+    timestamp: new Date().toISOString(),
+  });
+
+  addLog(projectId, {
+    id: generateLogId(),
+    projectId,
+    agent: 'devops',
+    action: 'rejected',
+    content: `🚫 تم رفض المشروع: ${reason ?? 'لم يوافق المستخدم'}`,
+    status: 'error',
+    timestamp: new Date().toISOString(),
+  });
 }
 
 async function runAgentWithRetry(
@@ -235,7 +332,7 @@ async function runAgentWithRetry(
       });
 
       if (attempts >= maxRetries) {
-        // If QA fails after retries, try running QA once more with simpler analysis
+        // If QA fails after retries, skip
         if (agentType === 'qa_debug') {
           addLog(projectId, {
             id: generateLogId(),
