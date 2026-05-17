@@ -1,38 +1,56 @@
-// Agent Orchestrator - محرك التنسيق الذكي (9 Agents)
-// ينفذ حلقة ذاتية: تحليل → تصميم → بناء → مراجعة → اختبار → أمان → نشر
+// Agent Orchestrator - محرك التنسيق الذكي (15 Agents)
+// ينفذ حلقة ذاتية: تحليل → تصميم → تطوير → مراجعة → اختبار → تحسين → أمان → SEO → توثيق → نشر
 
 import { AnalyzerAgent } from './analyzer-agent';
 import { ArchitectAgent } from './architect-agent';
 import { DesignerAgent } from './designer-agent';
+import { FrontendAgent } from './frontend-agent';
+import { BackendAgent } from './backend-agent';
+import { DatabaseAgent } from './database-agent';
 import { DeveloperAgent } from './developer-agent';
 import { ReviewerAgent } from './reviewer-agent';
 import { TesterAgent } from './tester-agent';
 import { DebuggerAgent } from './debugger-agent';
+import { PerformanceAgent } from './performance-agent';
 import { SecurityAgent } from './security-agent';
+import { SeoAgent } from './seo-agent';
+import { DocumenterAgent } from './documenter-agent';
 import { DeployerAgent } from './deployer-agent';
-import { AgentContext, ProjectIdea, AGENT_PIPELINE } from './types';
+import { AgentContext, ProjectIdea } from './types';
 import { db } from '@/lib/db';
 
 export class AgentOrchestrator {
   private analyzer: AnalyzerAgent;
   private architect: ArchitectAgent;
   private designer: DesignerAgent;
+  private frontend: FrontendAgent;
+  private backend: BackendAgent;
+  private database: DatabaseAgent;
   private developer: DeveloperAgent;
   private reviewer: ReviewerAgent;
   private tester: TesterAgent;
   private debugger: DebuggerAgent;
+  private performance: PerformanceAgent;
   private security: SecurityAgent;
+  private seo: SeoAgent;
+  private documenter: DocumenterAgent;
   private deployer: DeployerAgent;
 
   constructor() {
     this.analyzer = new AnalyzerAgent();
     this.architect = new ArchitectAgent();
     this.designer = new DesignerAgent();
+    this.frontend = new FrontendAgent();
+    this.backend = new BackendAgent();
+    this.database = new DatabaseAgent();
     this.developer = new DeveloperAgent();
     this.reviewer = new ReviewerAgent();
     this.tester = new TesterAgent();
     this.debugger = new DebuggerAgent();
+    this.performance = new PerformanceAgent();
     this.security = new SecurityAgent();
+    this.seo = new SeoAgent();
+    this.documenter = new DocumenterAgent();
     this.deployer = new DeployerAgent();
   }
 
@@ -54,7 +72,7 @@ export class AgentOrchestrator {
       data: {
         projectId,
         role: 'system',
-        content: `🚀 تم بدء مشروع جديد: "${idea.name}"\n\n💡 الفكرة: ${idea.idea}\n\nسيعمل نظام الوكلاء الذكي الآن بشكل ذاتي على: تحليل المتطلبات، تصميم البنية، تصميم الواجهات، بناء التطبيق، مراجعة الكود، اختبار الجودة، فحص الأمان، ونشر التطبيق.`,
+        content: `🚀 تم بدء مشروع جديد: "${idea.name}"\n\n💡 الفكرة: ${idea.idea}\n\nسيعمل نظام الوكلاء الذكي الآن بشكل ذاتي عبر 15 مرحلة:\n1️⃣ تحليل المتطلبات\n2️⃣ تصميم البنية\n3️⃣ تصميم الواجهات\n4️⃣ تطوير الواجهة الأمامية\n5️⃣ تطوير الخلفية\n6️⃣ بناء قاعدة البيانات\n7️⃣ البناء المتكامل\n8️⃣ مراجعة الكود\n9️⃣ اختبار الجودة\n🔟 إصلاح الأخطاء (عند الحاجة)\n1️⃣1️⃣ تحسين الأداء\n1️⃣2️⃣ فحص الأمان\n1️⃣3️⃣ تحسين SEO\n1️⃣4️⃣ التوثيق\n1️⃣5️⃣ النشر والرفع`,
       },
     });
 
@@ -93,86 +111,110 @@ export class AgentOrchestrator {
 
     try {
       // المرحلة 1: تحليل المتطلبات
-      console.log(`[منسق] المرحلة 1: تحليل المتطلبات - ${projectId}`);
+      console.log(`[منسق] المرحلة 1/15: تحليل المتطلبات - ${projectId}`);
       context = await this.analyzer.execute(context);
 
       // المرحلة 2: تصميم البنية
-      console.log(`[منسق] المرحلة 2: تصميم البنية - ${projectId}`);
+      console.log(`[منسق] المرحلة 2/15: تصميم البنية - ${projectId}`);
       context = await this.architect.execute(context);
 
       // المرحلة 3: تصميم الواجهات
-      console.log(`[منسق] المرحلة 3: تصميم الواجهات - ${projectId}`);
+      console.log(`[منسق] المرحلة 3/15: تصميم الواجهات - ${projectId}`);
       context = await this.designer.execute(context);
 
-      // المرحلة 4: بناء التطبيق
-      console.log(`[منسق] المرحلة 4: بناء التطبيق - ${projectId}`);
+      // المرحلة 4: تطوير الواجهة الأمامية
+      console.log(`[منسق] المرحلة 4/15: تطوير الواجهة الأمامية - ${projectId}`);
+      context = await this.frontend.execute(context);
+
+      // المرحلة 5: تطوير الخلفية
+      console.log(`[منسق] المرحلة 5/15: تطوير الخلفية - ${projectId}`);
+      context = await this.backend.execute(context);
+
+      // المرحلة 6: بناء قاعدة البيانات
+      console.log(`[منسق] المرحلة 6/15: بناء قاعدة البيانات - ${projectId}`);
+      context = await this.database.execute(context);
+
+      // المرحلة 7: البناء المتكامل (المطور الرئيسي)
+      console.log(`[منسق] المرحلة 7/15: البناء المتكامل - ${projectId}`);
       context = await this.developer.execute(context);
 
-      // إذا ظهرت أخطاء، حاول الإصلاح
+      // إذا ظهرت أخطاء في البناء، حاول الإصلاح
       if (context.errorLog) {
         console.log(`[منسق] مرحلة إصلاح: تصحيح الأخطاء - ${projectId}`);
         context = await this.debugger.execute(context);
-
-        // أعد البناء بعد الإصلاح
         if (!context.errorLog) {
           await db.agentMessage.create({
-            data: {
-              projectId,
-              role: 'system',
-              content: `🔄 إعادة البناء بعد إصلاح الأخطاء...`,
-            },
+            data: { projectId, role: 'system', content: '🔄 إعادة البناء بعد إصلاح الأخطاء...' },
           });
           context = await this.developer.execute(context);
         }
       }
 
-      // المرحلة 5: مراجعة الكود
+      // المرحلة 8: مراجعة الكود
       if (!context.errorLog) {
-        console.log(`[منسق] المرحلة 5: مراجعة الكود - ${projectId}`);
+        console.log(`[منسق] المرحلة 8/15: مراجعة الكود - ${projectId}`);
         context = await this.reviewer.execute(context);
       }
 
-      // المرحلة 6: اختبار الجودة
+      // المرحلة 9: اختبار الجودة
       if (!context.errorLog) {
-        console.log(`[منسق] المرحلة 6: اختبار الجودة - ${projectId}`);
+        console.log(`[منسق] المرحلة 9/15: اختبار الجودة - ${projectId}`);
         context = await this.tester.execute(context);
 
         // إذا فشلت الاختبارات، حاول الإصلاح
         if (context.errorLog && context.retryCount < context.maxRetries) {
           await db.agentMessage.create({
-            data: {
-              projectId,
-              role: 'system',
-              content: `🔧 فشلت بعض الاختبارات - جاري الإصلاح التلقائي...`,
-            },
+            data: { projectId, role: 'system', content: '🔧 فشلت بعض الاختبارات - جاري الإصلاح التلقائي...' },
           });
           context = await this.debugger.execute(context);
-
           if (!context.errorLog) {
             context = await this.tester.execute(context);
           }
         }
       }
 
-      // المرحلة 7: فحص الأمان
+      // المرحلة 10: إصلاح الأخطاء (إذا تبقت أخطاء)
+      if (context.errorLog && context.retryCount < context.maxRetries) {
+        console.log(`[منسق] المرحلة 10/15: إصلاح الأخطاء - ${projectId}`);
+        context = await this.debugger.execute(context);
+        if (!context.errorLog) {
+          context = await this.developer.execute(context);
+        }
+      }
+
+      // المرحلة 11: تحسين الأداء
       if (!context.errorLog) {
-        console.log(`[منسق] المرحلة 7: فحص الأمان - ${projectId}`);
+        console.log(`[منسق] المرحلة 11/15: تحسين الأداء - ${projectId}`);
+        context = await this.performance.execute(context);
+      }
+
+      // المرحلة 12: فحص الأمان
+      if (!context.errorLog) {
+        console.log(`[منسق] المرحلة 12/15: فحص الأمان - ${projectId}`);
         context = await this.security.execute(context);
       }
 
-      // المرحلة 8: النشر
+      // المرحلة 13: تحسين SEO
       if (!context.errorLog) {
-        console.log(`[منسق] المرحلة 8: النشر - ${projectId}`);
+        console.log(`[منسق] المرحلة 13/15: تحسين SEO - ${projectId}`);
+        context = await this.seo.execute(context);
+      }
+
+      // المرحلة 14: التوثيق
+      if (!context.errorLog) {
+        console.log(`[منسق] المرحلة 14/15: التوثيق - ${projectId}`);
+        context = await this.documenter.execute(context);
+      }
+
+      // المرحلة 15: النشر
+      if (!context.errorLog) {
+        console.log(`[منسق] المرحلة 15/15: النشر - ${projectId}`);
         context = await this.deployer.execute(context);
       } else {
         // حلقة إصلاح ذاتية نهائية
         while (context.errorLog && context.retryCount < context.maxRetries) {
           await db.agentMessage.create({
-            data: {
-              projectId,
-              role: 'system',
-              content: `🔄 محاولة إصلاح ${context.retryCount + 1}/${context.maxRetries}...`,
-            },
+            data: { projectId, role: 'system', content: `🔄 محاولة إصلاح نهائية ${context.retryCount + 1}/${context.maxRetries}...` },
           });
           context = await this.debugger.execute(context);
 
@@ -185,7 +227,10 @@ export class AgentOrchestrator {
         }
 
         if (!context.errorLog) {
+          context = await this.performance.execute(context);
           context = await this.security.execute(context);
+          context = await this.seo.execute(context);
+          context = await this.documenter.execute(context);
           context = await this.deployer.execute(context);
         } else {
           await db.project.update({
