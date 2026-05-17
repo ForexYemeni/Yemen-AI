@@ -10,31 +10,17 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
+import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import {
-  Brain,
-  Hammer,
-  Bug,
-  Rocket,
-  Plus,
-  Loader2,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  ExternalLink,
-  Github,
-  Globe,
-  Settings,
-  Sparkles,
-  Zap,
-  Activity,
-  MessageSquare,
-  FileCode,
-  Trash2,
-  Eye,
-  RefreshCw,
+  Search, Building2, Palette, Code2, FileCheck, TestTube2,
+  Bug, Shield, Rocket, Plus, Loader2, CheckCircle2, XCircle,
+  Clock, ExternalLink, Github, Globe, Settings, Sparkles,
+  Zap, Activity, MessageSquare, FileCode, Trash2, Eye,
+  RefreshCw, Brain, ChevronLeft, Cpu, Heart,
 } from 'lucide-react';
+import { AGENT_DEFINITIONS, STATUS_LABELS_AR } from '@/lib/agents/types';
+import type { AgentType, ProjectStatus } from '@/lib/agents/types';
 
 // Types
 interface Project {
@@ -43,6 +29,8 @@ interface Project {
   description: string;
   idea: string;
   status: string;
+  progress: number;
+  currentStep?: string;
   repoUrl?: string;
   deployUrl?: string;
   retryCount: number;
@@ -68,27 +56,38 @@ interface AgentMessage {
 }
 
 interface ProjectDetail {
-  project: Project;
+  project: Project & { plan?: string; codeFiles?: string };
   logs: AgentLog[];
   messages: AgentMessage[];
 }
 
-const statusConfig: Record<string, { label: string; color: string; icon: any }> = {
-  pending: { label: 'Pending', color: 'bg-gray-100 text-gray-700', icon: Clock },
-  planning: { label: 'Planning', color: 'bg-purple-100 text-purple-700', icon: Brain },
-  building: { label: 'Building', color: 'bg-amber-100 text-amber-700', icon: Hammer },
-  debugging: { label: 'Debugging', color: 'bg-red-100 text-red-700', icon: Bug },
-  deploying: { label: 'Deploying', color: 'bg-cyan-100 text-cyan-700', icon: Rocket },
-  completed: { label: 'Completed', color: 'bg-emerald-100 text-emerald-700', icon: CheckCircle2 },
-  failed: { label: 'Failed', color: 'bg-red-100 text-red-700', icon: XCircle },
+// Map agent types to icons
+const agentIcons: Record<string, any> = {
+  analyzer: Search,
+  architect: Building2,
+  designer: Palette,
+  developer: Code2,
+  reviewer: FileCheck,
+  tester: TestTube2,
+  debugger: Bug,
+  security: Shield,
+  deployer: Rocket,
+  system: Cpu,
 };
 
-const agentConfig: Record<string, { name: string; color: string; icon: any; bgColor: string }> = {
-  planner: { name: 'Planner', color: 'text-purple-600', icon: Brain, bgColor: 'bg-purple-50' },
-  builder: { name: 'Builder', color: 'text-amber-600', icon: Hammer, bgColor: 'bg-amber-50' },
-  debugger: { name: 'Debugger', color: 'text-red-600', icon: Bug, bgColor: 'bg-red-50' },
-  devops: { name: 'DevOps', color: 'text-cyan-600', icon: Rocket, bgColor: 'bg-cyan-50' },
-  system: { name: 'System', color: 'text-gray-600', icon: Activity, bgColor: 'bg-gray-50' },
+const statusIcons: Record<string, any> = {
+  pending: Clock,
+  analyzing: Search,
+  architecting: Building2,
+  designing: Palette,
+  developing: Code2,
+  reviewing: FileCheck,
+  testing: TestTube2,
+  debugging: Bug,
+  securing: Shield,
+  deploying: Rocket,
+  completed: CheckCircle2,
+  failed: XCircle,
 };
 
 export default function Dashboard() {
@@ -100,12 +99,10 @@ export default function Dashboard() {
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState<any>(null);
 
-  // New project form
   const [newName, setNewName] = useState('');
   const [newIdea, setNewIdea] = useState('');
   const [newDescription, setNewDescription] = useState('');
 
-  // Settings form
   const [githubToken, setGithubToken] = useState('');
   const [vercelToken, setVercelToken] = useState('');
   const [githubRepo, setGithubRepo] = useState('');
@@ -117,7 +114,7 @@ export default function Dashboard() {
       const data = await res.json();
       setProjects(data);
     } catch (error) {
-      console.error('Failed to fetch projects:', error);
+      console.error('فشل في جلب المشاريع:', error);
     } finally {
       setLoading(false);
     }
@@ -130,7 +127,7 @@ export default function Dashboard() {
       setSettings(data);
       setGithubRepo(data.githubRepo || '');
     } catch (error) {
-      console.error('Failed to fetch settings:', error);
+      console.error('فشل في جلب الإعدادات:', error);
     }
   }, []);
 
@@ -139,13 +136,11 @@ export default function Dashboard() {
     fetchSettings();
   }, [fetchProjects, fetchSettings]);
 
-  // Auto-refresh projects every 3 seconds
   useEffect(() => {
     const interval = setInterval(fetchProjects, 3000);
     return () => clearInterval(interval);
   }, [fetchProjects]);
 
-  // Auto-refresh selected project
   useEffect(() => {
     if (!selectedProject) return;
     const interval = setInterval(async () => {
@@ -154,7 +149,7 @@ export default function Dashboard() {
         const data = await res.json();
         setSelectedProject(data);
       } catch (error) {
-        console.error('Failed to refresh project:', error);
+        console.error('فشل في تحديث المشروع:', error);
       }
     }, 2000);
     return () => clearInterval(interval);
@@ -163,19 +158,13 @@ export default function Dashboard() {
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim() || !newIdea.trim()) return;
-
     setCreating(true);
     try {
       const res = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newName,
-          idea: newIdea,
-          description: newDescription || newName,
-        }),
+        body: JSON.stringify({ name: newName, idea: newIdea, description: newDescription || newName }),
       });
-
       if (res.ok) {
         setNewName('');
         setNewIdea('');
@@ -184,7 +173,7 @@ export default function Dashboard() {
         fetchProjects();
       }
     } catch (error) {
-      console.error('Failed to create project:', error);
+      console.error('فشل في إنشاء المشروع:', error);
     } finally {
       setCreating(false);
     }
@@ -196,19 +185,17 @@ export default function Dashboard() {
       const data = await res.json();
       setSelectedProject(data);
     } catch (error) {
-      console.error('Failed to fetch project detail:', error);
+      console.error('فشل في جلب تفاصيل المشروع:', error);
     }
   };
 
   const handleDeleteProject = async (id: string) => {
     try {
       await fetch(`/api/projects/${id}`, { method: 'DELETE' });
-      if (selectedProject?.project.id === id) {
-        setSelectedProject(null);
-      }
+      if (selectedProject?.project.id === id) setSelectedProject(null);
       fetchProjects();
     } catch (error) {
-      console.error('Failed to delete project:', error);
+      console.error('فشل في حذف المشروع:', error);
     }
   };
 
@@ -219,7 +206,6 @@ export default function Dashboard() {
       const updateData: Record<string, string> = { githubRepo };
       if (githubToken) updateData.githubToken = githubToken;
       if (vercelToken) updateData.vercelToken = vercelToken;
-
       await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -228,7 +214,7 @@ export default function Dashboard() {
       fetchSettings();
       setShowSettings(false);
     } catch (error) {
-      console.error('Failed to save settings:', error);
+      console.error('فشل في حفظ الإعدادات:', error);
     } finally {
       setSavingSettings(false);
     }
@@ -236,137 +222,97 @@ export default function Dashboard() {
 
   const activeProjects = projects.filter(p => !['completed', 'failed'].includes(p.status));
   const completedProjects = projects.filter(p => p.status === 'completed');
-  const failedProjects = projects.filter(p => p.status === 'failed');
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/30">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-violet-50/30" dir="rtl">
       {/* Header */}
-      <header className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4">
+      <header className="border-b bg-white/80 backdrop-blur-xl sticky top-0 z-50 shadow-sm">
+        <div className="container mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="relative">
-                <Brain className="h-8 w-8 text-primary" />
-                <Sparkles className="h-4 w-4 text-amber-500 absolute -top-1 -right-1" />
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-500/25">
+                  <Brain className="h-6 w-6 text-white" />
+                </div>
+                <div className="absolute -top-1 -left-1 h-4 w-4 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center">
+                  <Sparkles className="h-2.5 w-2.5 text-white" />
+                </div>
               </div>
               <div>
-                <h1 className="text-2xl font-bold tracking-tight">AI Agent Factory</h1>
-                <p className="text-sm text-muted-foreground">Autonomous Software Development System</p>
+                <h1 className="text-xl font-bold bg-gradient-to-l from-violet-700 to-indigo-600 bg-clip-text text-transparent">
+                  مصنع الوكلاء الذكي
+                </h1>
+                <p className="text-xs text-muted-foreground">نظام تطوير برمجيات ذاتي بالكامل</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground">
-                <Activity className="h-4 w-4" />
-                <span>{activeProjects.length} active</span>
+            <div className="flex items-center gap-2">
+              <div className="hidden md:flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-1.5">
+                <Activity className="h-3.5 w-3.5" />
+                <span>{activeProjects.length} نشط</span>
                 <span className="text-border">|</span>
-                <span>{completedProjects.length} completed</span>
+                <span>{completedProjects.length} مكتمل</span>
               </div>
               <Dialog open={showSettings} onOpenChange={setShowSettings}>
                 <DialogTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <Settings className="h-4 w-4 mr-2" />
-                    Settings
+                  <Button variant="outline" size="sm" className="gap-1.5">
+                    <Settings className="h-4 w-4" />
+                    <span className="hidden sm:inline">الإعدادات</span>
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>System Settings</DialogTitle>
-                    <DialogDescription>Configure GitHub and Vercel integration tokens</DialogDescription>
+                    <DialogTitle>⚙️ إعدادات النظام</DialogTitle>
+                    <DialogDescription>إعداد ربط GitHub و Vercel للنشر التلقائي</DialogDescription>
                   </DialogHeader>
                   <form onSubmit={handleSaveSettings} className="space-y-4 mt-4">
                     <div className="space-y-2">
-                      <Label htmlFor="github-token">GitHub Personal Access Token</Label>
-                      <Input
-                        id="github-token"
-                        type="password"
-                        value={githubToken}
-                        onChange={(e) => setGithubToken(e.target.value)}
-                        placeholder={settings?.hasGithubToken ? '•••••••• (configured)' : 'ghp_xxxxxxxxxxxx'}
-                      />
-                      <p className="text-xs text-muted-foreground">Required for automatic repository creation</p>
+                      <Label>رمز GitHub الشخصي</Label>
+                      <Input type="password" value={githubToken} onChange={(e) => setGithubToken(e.target.value)} placeholder={settings?.hasGithubToken ? '•••••••• (مُعد)' : 'ghp_xxxxxxxxxxxx'} />
+                      <p className="text-xs text-muted-foreground">مطلوب لإنشاء المستودعات تلقائياً</p>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="vercel-token">Vercel API Token</Label>
-                      <Input
-                        id="vercel-token"
-                        type="password"
-                        value={vercelToken}
-                        onChange={(e) => setVercelToken(e.target.value)}
-                        placeholder={settings?.hasVercelToken ? '•••••••• (configured)' : 'vercel_xxxxxxxxxxxx'}
-                      />
-                      <p className="text-xs text-muted-foreground">Required for automatic deployment</p>
+                      <Label>رمز Vercel</Label>
+                      <Input type="password" value={vercelToken} onChange={(e) => setVercelToken(e.target.value)} placeholder={settings?.hasVercelToken ? '•••••••• (مُعد)' : 'vercel_xxxxxxxxxxxx'} />
+                      <p className="text-xs text-muted-foreground">مطلوب للنشر التلقائي</p>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="github-repo">Default GitHub Repository Prefix</Label>
-                      <Input
-                        id="github-repo"
-                        value={githubRepo}
-                        onChange={(e) => setGithubRepo(e.target.value)}
-                        placeholder="my-organization"
-                      />
+                      <Label>بادئة المستودع</Label>
+                      <Input value={githubRepo} onChange={(e) => setGithubRepo(e.target.value)} placeholder="my-organization" />
                     </div>
                     <Button type="submit" disabled={savingSettings} className="w-full">
                       {savingSettings ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
-                      Save Settings
+                      حفظ الإعدادات
                     </Button>
                   </form>
                 </DialogContent>
               </Dialog>
               <Dialog open={showNewProject} onOpenChange={setShowNewProject}>
                 <DialogTrigger asChild>
-                  <Button>
-                    <Plus className="h-4 w-4 mr-2" />
-                    New Project
+                  <Button className="gap-1.5 bg-gradient-to-l from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 shadow-lg shadow-violet-500/25">
+                    <Plus className="h-4 w-4" />
+                    <span className="hidden sm:inline">مشروع جديد</span>
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-lg">
                   <DialogHeader>
-                    <DialogTitle>Create New Project</DialogTitle>
-                    <DialogDescription>Describe your idea and the AI agents will build it autonomously</DialogDescription>
+                    <DialogTitle>🚀 إنشاء مشروع جديد</DialogTitle>
+                    <DialogDescription>صِف فكرتك وسيعمل نظام الوكلاء الذكي على بنائها بشكل ذاتي</DialogDescription>
                   </DialogHeader>
                   <form onSubmit={handleCreateProject} className="space-y-4 mt-4">
                     <div className="space-y-2">
-                      <Label htmlFor="project-name">Project Name</Label>
-                      <Input
-                        id="project-name"
-                        value={newName}
-                        onChange={(e) => setNewName(e.target.value)}
-                        placeholder="My Awesome App"
-                        required
-                      />
+                      <Label>اسم المشروع</Label>
+                      <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="تطبيق المهام" required />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="project-idea">Your Idea</Label>
-                      <Textarea
-                        id="project-idea"
-                        value={newIdea}
-                        onChange={(e) => setNewIdea(e.target.value)}
-                        placeholder="Describe what you want to build in detail. The more specific you are, the better the AI agents can build it. Example: A task management app with teams, priorities, and deadline tracking..."
-                        rows={4}
-                        required
-                      />
+                      <Label>الفكرة</Label>
+                      <Textarea value={newIdea} onChange={(e) => setNewIdea(e.target.value)} placeholder="صِف ما تريد بناءه بالتفصيل. كلما كان الوصف أدق، كان البناء أفضل..." rows={4} required />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="project-desc">Short Description (optional)</Label>
-                      <Input
-                        id="project-desc"
-                        value={newDescription}
-                        onChange={(e) => setNewDescription(e.target.value)}
-                        placeholder="Brief description for the project card"
-                      />
+                      <Label>وصف مختصر (اختياري)</Label>
+                      <Input value={newDescription} onChange={(e) => setNewDescription(e.target.value)} placeholder="وصف مختصر للمشروع" />
                     </div>
-                    <Button type="submit" disabled={creating} className="w-full">
-                      {creating ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Starting AI Agents...
-                        </>
-                      ) : (
-                        <>
-                          <Zap className="h-4 w-4 mr-2" />
-                          Launch AI Agents
-                        </>
-                      )}
+                    <Button type="submit" disabled={creating} className="w-full bg-gradient-to-l from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700">
+                      {creating ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />جاري تشغيل الوكلاء...</> : <><Zap className="h-4 w-4 mr-2" />إطلاق الوكلاء الذكيين</>}
                     </Button>
                   </form>
                 </DialogContent>
@@ -377,122 +323,122 @@ export default function Dashboard() {
       </header>
 
       <main className="container mx-auto px-4 py-6">
-        {/* Agent Status Bar */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
-          {Object.entries(agentConfig).filter(([key]) => key !== 'system').map(([key, config]) => {
-            const Icon = config.icon;
-            const isActive = activeProjects.some(p => {
-              if (key === 'planner' && p.status === 'planning') return true;
-              if (key === 'builder' && p.status === 'building') return true;
-              if (key === 'debugger' && p.status === 'debugging') return true;
-              if (key === 'devops' && p.status === 'deploying') return true;
-              return false;
-            });
-            return (
-              <motion.div
-                key={key}
-                whileHover={{ scale: 1.02 }}
-                className={`rounded-xl border p-4 ${config.bgColor} transition-all ${isActive ? 'ring-2 ring-primary/30' : ''}`}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <Icon className={`h-5 w-5 ${config.color}`} />
-                  <span className="font-medium text-sm">{config.name}</span>
+        {/* Agent Pipeline */}
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-4">
+            <Cpu className="h-5 w-5 text-violet-600" />
+            <h2 className="text-lg font-bold">خط أنابيب الوكلاء الذكيين</h2>
+            <Badge variant="secondary" className="mr-2">9 وكلاء</Badge>
+          </div>
+          <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2">
+            {(Object.entries(AGENT_DEFINITIONS) as [AgentType, any][]).map(([key, config], index) => {
+              const Icon = agentIcons[key] || Cpu;
+              const isActive = activeProjects.some(p => {
+                const statusMap: Record<string, string> = {
+                  analyzing: 'analyzer', architecting: 'architect', designing: 'designer',
+                  developing: 'developer', reviewing: 'reviewer', testing: 'tester',
+                  debugging: 'debugger', securing: 'security', deploying: 'deployer',
+                };
+                return statusMap[p.status] === key;
+              });
+              return (
+                <motion.div
+                  key={key}
+                  whileHover={{ scale: 1.05, y: -2 }}
+                  className={`relative rounded-xl border p-3 text-center transition-all cursor-default ${
+                    isActive ? `border-violet-300 bg-gradient-to-br ${config.gradient} text-white shadow-lg` : `${config.bgColor} ${config.borderColor}`
+                  }`}
+                >
+                  <Icon className={`h-6 w-6 mx-auto mb-1 ${isActive ? 'text-white' : config.color}`} />
+                  <p className={`text-xs font-bold ${isActive ? 'text-white' : config.color}`}>{config.nameAr}</p>
+                  <div className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-slate-200 text-[10px] font-bold flex items-center justify-center text-slate-600">
+                    {index + 1}
+                  </div>
                   {isActive && (
                     <motion.div
-                      animate={{ opacity: [1, 0.3, 1] }}
+                      animate={{ scale: [1, 1.3, 1] }}
                       transition={{ duration: 1.5, repeat: Infinity }}
-                      className="w-2 h-2 rounded-full bg-green-500 ml-auto"
+                      className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-white shadow-lg"
                     />
                   )}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {isActive ? 'Currently active' : 'Standing by'}
-                </p>
-              </motion.div>
-            );
-          })}
+                </motion.div>
+              );
+            })}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Projects List */}
           <div className="lg:col-span-1 space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Projects</h2>
-              <Button variant="ghost" size="sm" onClick={fetchProjects}>
+              <h2 className="text-lg font-bold">المشاريع</h2>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={fetchProjects}>
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </div>
 
             {loading ? (
               <div className="text-center py-12">
-                <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
-                <p className="mt-2 text-sm text-muted-foreground">Loading projects...</p>
+                <Loader2 className="h-8 w-8 animate-spin mx-auto text-violet-500" />
+                <p className="mt-2 text-sm text-muted-foreground">جاري تحميل المشاريع...</p>
               </div>
             ) : projects.length === 0 ? (
               <Card className="border-dashed">
                 <CardContent className="text-center py-12">
-                  <Sparkles className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-                  <h3 className="font-semibold mb-1">No Projects Yet</h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Create your first project and let the AI agents build it for you!
-                  </p>
-                  <Button onClick={() => setShowNewProject(true)}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    New Project
+                  <div className="h-16 w-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-violet-100 to-indigo-100 flex items-center justify-center">
+                    <Sparkles className="h-8 w-8 text-violet-500" />
+                  </div>
+                  <h3 className="font-bold mb-1">لا توجد مشاريع بعد</h3>
+                  <p className="text-sm text-muted-foreground mb-4">أنشئ مشروعك الأول ودع الوكلاء الذكيين يبنونه لك!</p>
+                  <Button onClick={() => setShowNewProject(true)} className="bg-gradient-to-l from-violet-600 to-indigo-600">
+                    <Plus className="h-4 w-4 mr-2" />مشروع جديد
                   </Button>
                 </CardContent>
               </Card>
             ) : (
-              <ScrollArea className="h-[calc(100vh-320px)]">
-                <div className="space-y-3 pr-4">
+              <ScrollArea className="h-[calc(100vh-380px)]">
+                <div className="space-y-3 pl-2">
                   <AnimatePresence>
                     {projects.map((project) => {
-                      const statusInfo = statusConfig[project.status] || statusConfig.pending;
-                      const StatusIcon = statusInfo.icon;
+                      const StatusIcon = statusIcons[project.status] || Clock;
                       const isSelected = selectedProject?.project.id === project.id;
                       const isActive = !['completed', 'failed'].includes(project.status);
+                      const statusLabel = STATUS_LABELS_AR[project.status] || project.status;
 
                       return (
                         <motion.div
                           key={project.id}
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -10 }}
-                          transition={{ duration: 0.2 }}
+                          initial={{ opacity: 0, x: 20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: -20 }}
                         >
                           <Card
                             className={`cursor-pointer transition-all hover:shadow-md ${
-                              isSelected ? 'ring-2 ring-primary' : ''
-                            } ${isActive ? 'border-primary/30' : ''}`}
+                              isSelected ? 'ring-2 ring-violet-500 shadow-md' : ''
+                            }`}
                             onClick={() => handleSelectProject(project)}
                           >
                             <CardContent className="p-4">
                               <div className="flex items-start justify-between mb-2">
                                 <div className="flex items-center gap-2">
                                   {isActive ? (
-                                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                                    <Loader2 className="h-4 w-4 animate-spin text-violet-500" />
+                                  ) : project.status === 'completed' ? (
+                                    <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                                   ) : (
-                                    <StatusIcon className={`h-4 w-4 ${project.status === 'completed' ? 'text-emerald-500' : 'text-red-500'}`} />
+                                    <XCircle className="h-4 w-4 text-red-500" />
                                   )}
-                                  <h3 className="font-medium text-sm">{project.name}</h3>
+                                  <h3 className="font-bold text-sm">{project.name}</h3>
                                 </div>
-                                <Badge variant="secondary" className={`text-xs ${statusInfo.color}`}>
-                                  {statusInfo.label}
+                                <Badge variant="secondary" className="text-[10px]">
+                                  {statusLabel}
                                 </Badge>
                               </div>
-                              <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
-                                {project.idea}
-                              </p>
-                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                <Clock className="h-3 w-3" />
-                                <span>{new Date(project.createdAt).toLocaleDateString()}</span>
-                                {project._count && (
-                                  <>
-                                    <span className="text-border">|</span>
-                                    <MessageSquare className="h-3 w-3" />
-                                    <span>{project._count.messages}</span>
-                                  </>
-                                )}
+                              <p className="text-xs text-muted-foreground line-clamp-2 mb-3">{project.idea}</p>
+                              <Progress value={project.progress} className="h-1.5 mb-2" />
+                              <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                                <span>{project.progress}% — {project.currentStep || statusLabel}</span>
+                                <span>{new Date(project.createdAt).toLocaleDateString('ar')}</span>
                               </div>
                             </CardContent>
                           </Card>
@@ -508,73 +454,73 @@ export default function Dashboard() {
           {/* Project Detail */}
           <div className="lg:col-span-2">
             {selectedProject ? (
-              <ProjectDetail
+              <ProjectDetailComponent
                 detail={selectedProject}
                 onDelete={() => handleDeleteProject(selectedProject.project.id)}
-                onClose={() => setSelectedProject(null)}
               />
             ) : (
-              <Card className="border-dashed h-[calc(100vh-320px)] flex items-center justify-center">
+              <Card className="border-dashed h-[calc(100vh-380px)] flex items-center justify-center">
                 <CardContent className="text-center">
-                  <Eye className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">Select a Project</h3>
-                  <p className="text-sm text-muted-foreground max-w-sm">
-                    Click on a project to see the AI agents&apos; progress, logs, and conversation in real-time.
-                  </p>
+                  <div className="h-20 w-20 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-violet-100 to-indigo-100 flex items-center justify-center">
+                    <Eye className="h-10 w-10 text-violet-400" />
+                  </div>
+                  <h3 className="text-lg font-bold mb-2">اختر مشروعاً</h3>
+                  <p className="text-sm text-muted-foreground max-w-sm">اضغط على مشروع لمتابعة تقدم الوكلاء الذكيين والرسائل والسجلات في الوقت الفعلي.</p>
                 </CardContent>
               </Card>
             )}
           </div>
         </div>
+
+        {/* Footer */}
+        <footer className="mt-12 text-center text-xs text-muted-foreground py-4 border-t">
+          <p className="flex items-center justify-center gap-1">
+            صُنع بكل <Heart className="h-3 w-3 text-red-400 inline" /> بواسطة مصنع الوكلاء الذكي — 9 وكلاء ذكاء اصطناعي يعملون بشكل ذاتي
+          </p>
+        </footer>
       </main>
     </div>
   );
 }
 
-// Project Detail Component
-function ProjectDetail({
+function ProjectDetailComponent({
   detail,
   onDelete,
-  onClose,
 }: {
   detail: ProjectDetail;
   onDelete: () => void;
-  onClose: () => void;
 }) {
   const { project, logs, messages } = detail;
-  const statusInfo = statusConfig[project.status] || statusConfig.pending;
   const isActive = !['completed', 'failed'].includes(project.status);
+  const statusLabel = STATUS_LABELS_AR[project.status] || project.status;
+  const StatusIcon = statusIcons[project.status] || Clock;
 
-  // Parse plan if available
-  let planSteps: any[] = [];
-  try {
-    if ((project as any).plan) {
-      const plan = JSON.parse((project as any).plan);
-      planSteps = plan.steps || [];
-    }
-  } catch {}
-
-  // Parse code files count
   let codeFilesCount = 0;
   try {
-    if ((project as any).codeFiles) {
-      const files = JSON.parse((project as any).codeFiles);
-      codeFilesCount = files.length;
-    }
+    if (project.codeFiles) codeFilesCount = JSON.parse(project.codeFiles).length;
   } catch {}
 
   return (
     <div className="space-y-4">
       {/* Project Header */}
-      <Card>
+      <Card className="overflow-hidden">
+        <div className={`h-2 bg-gradient-to-l ${
+          project.status === 'completed' ? 'from-emerald-400 to-teal-500' :
+          project.status === 'failed' ? 'from-red-400 to-pink-500' :
+          'from-violet-400 to-indigo-500'
+        }`} />
         <CardContent className="p-6">
           <div className="flex items-start justify-between mb-4">
             <div>
               <div className="flex items-center gap-3 mb-2">
                 <h2 className="text-xl font-bold">{project.name}</h2>
-                <Badge className={statusInfo.color}>
+                <Badge className={
+                  project.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
+                  project.status === 'failed' ? 'bg-red-100 text-red-700' :
+                  'bg-violet-100 text-violet-700'
+                }>
                   {isActive && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
-                  {statusInfo.label}
+                  {statusLabel}
                 </Badge>
               </div>
               <p className="text-sm text-muted-foreground max-w-2xl">{project.idea}</p>
@@ -583,69 +529,58 @@ function ProjectDetail({
               {project.repoUrl && (
                 <Button variant="outline" size="sm" asChild>
                   <a href={project.repoUrl} target="_blank" rel="noopener noreferrer">
-                    <Github className="h-4 w-4 mr-1" />
-                    Repo
+                    <Github className="h-4 w-4 mr-1" />المستودع
                   </a>
                 </Button>
               )}
               {project.deployUrl && (
-                <Button size="sm" asChild>
+                <Button size="sm" className="bg-gradient-to-l from-violet-600 to-indigo-600" asChild>
                   <a href={`https://${project.deployUrl}`} target="_blank" rel="noopener noreferrer">
-                    <Globe className="h-4 w-4 mr-1" />
-                    Live
+                    <Globe className="h-4 w-4 mr-1" />الموقع
                   </a>
                 </Button>
               )}
-              <Button variant="ghost" size="icon" className="text-destructive" onClick={onDelete}>
+              <Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={onDelete}>
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>
           </div>
 
-          {/* Stats */}
+          <Progress value={project.progress} className="h-2 mb-3" />
+          <p className="text-xs text-muted-foreground text-center mb-4">{project.progress}% — {project.currentStep || statusLabel}</p>
+
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="rounded-lg bg-muted/50 p-3">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-                <FileCode className="h-4 w-4" />
-                Files
-              </div>
-              <p className="text-lg font-semibold">{codeFilesCount}</p>
+            <div className="rounded-xl bg-gradient-to-br from-violet-50 to-indigo-50 p-3 text-center">
+              <FileCode className="h-5 w-5 mx-auto text-violet-500 mb-1" />
+              <p className="text-lg font-bold">{codeFilesCount}</p>
+              <p className="text-[10px] text-muted-foreground">ملف</p>
             </div>
-            <div className="rounded-lg bg-muted/50 p-3">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-                <Activity className="h-4 w-4" />
-                Retries
-              </div>
-              <p className="text-lg font-semibold">{project.retryCount}</p>
+            <div className="rounded-xl bg-gradient-to-br from-emerald-50 to-teal-50 p-3 text-center">
+              <Activity className="h-5 w-5 mx-auto text-emerald-500 mb-1" />
+              <p className="text-lg font-bold">{project.retryCount}</p>
+              <p className="text-[10px] text-muted-foreground">إعادة محاولة</p>
             </div>
-            <div className="rounded-lg bg-muted/50 p-3">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-                <MessageSquare className="h-4 w-4" />
-                Messages
-              </div>
-              <p className="text-lg font-semibold">{messages.length}</p>
+            <div className="rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 p-3 text-center">
+              <MessageSquare className="h-5 w-5 mx-auto text-amber-500 mb-1" />
+              <p className="text-lg font-bold">{messages.length}</p>
+              <p className="text-[10px] text-muted-foreground">رسالة</p>
             </div>
-            <div className="rounded-lg bg-muted/50 p-3">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-                <Clock className="h-4 w-4" />
-                Created
-              </div>
-              <p className="text-sm font-semibold">{new Date(project.createdAt).toLocaleTimeString()}</p>
+            <div className="rounded-xl bg-gradient-to-br from-pink-50 to-rose-50 p-3 text-center">
+              <Clock className="h-5 w-5 mx-auto text-pink-500 mb-1" />
+              <p className="text-sm font-bold">{new Date(project.createdAt).toLocaleTimeString('ar')}</p>
+              <p className="text-[10px] text-muted-foreground">وقت الإنشاء</p>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Tabs: Conversation / Logs */}
       <Tabs defaultValue="conversation">
         <TabsList className="w-full">
-          <TabsTrigger value="conversation" className="flex-1">
-            <MessageSquare className="h-4 w-4 mr-2" />
-            Conversation
+          <TabsTrigger value="conversation" className="flex-1 gap-1.5">
+            <MessageSquare className="h-4 w-4" />المحادثة
           </TabsTrigger>
-          <TabsTrigger value="logs" className="flex-1">
-            <Activity className="h-4 w-4 mr-2" />
-            Agent Logs
+          <TabsTrigger value="logs" className="flex-1 gap-1.5">
+            <Activity className="h-4 w-4" />السجلات
           </TabsTrigger>
         </TabsList>
 
@@ -653,34 +588,38 @@ function ProjectDetail({
           <Card>
             <CardContent className="p-0">
               <ScrollArea className="h-[400px]">
-                <div className="p-4 space-y-4">
+                <div className="p-4 space-y-3">
                   {messages.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground text-sm">
-                      No messages yet. The agents will start communicating soon...
+                      لا توجد رسائل بعد. سيبدأ الوكلاء بالتواصل قريباً...
                     </div>
                   ) : (
                     messages.map((msg) => {
-                      const agent = agentConfig[msg.role] || agentConfig.system;
-                      const Icon = agent.icon;
+                      const agentDef = AGENT_DEFINITIONS[msg.role as AgentType];
+                      const Icon = agentIcons[msg.role] || Cpu;
+                      const color = agentDef?.color || 'text-gray-600';
+                      const bgColor = agentDef?.bgColor || 'bg-gray-50';
 
                       return (
                         <motion.div
                           key={msg.id}
-                          initial={{ opacity: 0, x: -10 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          className={`flex gap-3 p-3 rounded-lg ${agent.bgColor}`}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className={`flex gap-3 p-3 rounded-xl ${bgColor}`}
                         >
-                          <div className={`mt-0.5 ${agent.color}`}>
+                          <div className={`mt-0.5 shrink-0 ${color}`}>
                             <Icon className="h-5 w-5" />
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
-                              <span className={`font-medium text-sm ${agent.color}`}>{agent.name}</span>
-                              <span className="text-xs text-muted-foreground">
-                                {new Date(msg.createdAt).toLocaleTimeString()}
+                              <span className={`font-bold text-sm ${color}`}>
+                                {agentDef?.nameAr || msg.role === 'system' ? 'النظام' : msg.role}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground">
+                                {new Date(msg.createdAt).toLocaleTimeString('ar')}
                               </span>
                             </div>
-                            <div className="text-sm whitespace-pre-wrap break-words">
+                            <div className="text-sm whitespace-pre-wrap break-words leading-relaxed">
                               {msg.content}
                             </div>
                           </div>
@@ -698,38 +637,32 @@ function ProjectDetail({
           <Card>
             <CardContent className="p-0">
               <ScrollArea className="h-[400px]">
-                <div className="p-4 space-y-2">
+                <div className="p-4 space-y-1">
                   {logs.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground text-sm">
-                      No logs yet. Agent activity will appear here...
+                      لا توجد سجلات بعد. ستظهر نشاطات الوكلاء هنا...
                     </div>
                   ) : (
                     logs.map((log) => {
-                      const agent = agentConfig[log.agent] || agentConfig.system;
-                      const Icon = agent.icon;
-
-                      const statusColors: Record<string, string> = {
-                        info: 'text-blue-500',
-                        success: 'text-emerald-500',
-                        error: 'text-red-500',
-                        warning: 'text-amber-500',
-                      };
+                      const agentDef = AGENT_DEFINITIONS[log.agent as AgentType];
+                      const Icon = agentIcons[log.agent] || Cpu;
+                      const color = agentDef?.color || 'text-gray-600';
+                      const statusEmoji: Record<string, string> = { info: '●', success: '✓', error: '✕', warning: '⚠' };
+                      const statusColor: Record<string, string> = { info: 'text-blue-500', success: 'text-emerald-500', error: 'text-red-500', warning: 'text-amber-500' };
 
                       return (
-                        <div key={log.id} className="flex items-start gap-3 py-2 border-b last:border-0">
-                          <Icon className={`h-4 w-4 mt-0.5 ${agent.color}`} />
+                        <div key={log.id} className="flex items-start gap-2 py-2 border-b last:border-0 text-xs">
+                          <Icon className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${color}`} />
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-0.5">
-                              <span className={`text-xs font-medium ${agent.color}`}>{agent.name}</span>
-                              <span className="text-xs text-muted-foreground">{log.action}</span>
-                              <span className={`text-xs ${statusColors[log.status] || ''}`}>
-                                {log.status === 'error' ? '✕' : log.status === 'success' ? '✓' : log.status === 'warning' ? '⚠' : '●'}
-                              </span>
+                            <div className="flex items-center gap-1 mb-0.5">
+                              <span className={`font-bold ${color}`}>{agentDef?.nameAr || log.agent}</span>
+                              <span className="text-muted-foreground">{log.action}</span>
+                              <span className={statusColor[log.status] || ''}>{statusEmoji[log.status] || '●'}</span>
                             </div>
-                            <p className="text-xs text-muted-foreground truncate">{log.content}</p>
+                            <p className="text-muted-foreground truncate">{log.content}</p>
                           </div>
-                          <span className="text-xs text-muted-foreground shrink-0">
-                            {new Date(log.createdAt).toLocaleTimeString()}
+                          <span className="text-[10px] text-muted-foreground shrink-0">
+                            {new Date(log.createdAt).toLocaleTimeString('ar')}
                           </span>
                         </div>
                       );

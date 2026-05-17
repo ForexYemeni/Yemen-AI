@@ -14,9 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AI Agent Factory - Autonomous Software Development System",
-  description: "Build applications autonomously with AI agents: Planner, Builder, Debugger, and DevOps. From idea to deployed app in minutes.",
-  keywords: ["AI Agent", "Autonomous Development", "Next.js", "TypeScript", "AI Software Factory"],
+  title: "مصنع الوكلاء الذكي - نظام تطوير برمجيات ذاتي",
+  description: "نظام وكلاء ذكاء اصطناعي مستقل لبناء التطبيقات تلقائياً: تحليل، تصميم، بناء، مراجعة، اختبار، أمان، ونشر.",
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
   },
@@ -28,7 +27,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="ar" dir="rtl" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >

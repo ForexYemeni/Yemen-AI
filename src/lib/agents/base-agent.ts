@@ -1,12 +1,12 @@
-// Base Agent - Abstract class for all agents
+// Base Agent - Abstract class for all agents (Arabic system)
 
-import { AgentType, AgentContext, AgentAction } from './types';
+import { AgentType, AgentContext, LogStatus } from './types';
 import { db } from '@/lib/db';
 
 export abstract class BaseAgent {
   abstract type: AgentType;
   abstract name: string;
-  abstract description: string;
+  abstract nameAr: string;
 
   abstract execute(context: AgentContext): Promise<AgentContext>;
 
@@ -14,20 +14,14 @@ export abstract class BaseAgent {
     projectId: string,
     action: string,
     content: string,
-    status: 'info' | 'success' | 'error' | 'warning' = 'info'
+    status: LogStatus = 'info'
   ) {
     try {
       await db.agentLog.create({
-        data: {
-          projectId,
-          agent: this.type,
-          action,
-          content,
-          status,
-        },
+        data: { projectId, agent: this.type, action, content, status },
       });
     } catch (error) {
-      console.error(`[AgentLog Error] ${this.type}:`, error);
+      console.error(`[سجل الوكيل] ${this.type}:`, error);
     }
   }
 
@@ -38,28 +32,36 @@ export abstract class BaseAgent {
   ) {
     try {
       await db.agentMessage.create({
-        data: {
-          projectId,
-          role,
-          content,
-        },
+        data: { projectId, role, content },
       });
     } catch (error) {
-      console.error(`[AgentMessage Error] ${this.type}:`, error);
+      console.error(`[رسالة الوكيل] ${this.type}:`, error);
     }
   }
 
-  protected async updateProjectStatus(projectId: string, status: string, additionalData?: Record<string, any>) {
+  protected async updateProject(
+    projectId: string,
+    status: string,
+    progress: number,
+    currentStep: string,
+    additionalData?: Record<string, any>
+  ) {
     try {
       await db.project.update({
         where: { id: projectId },
         data: {
           status,
+          progress,
+          currentStep,
           ...additionalData,
         },
       });
     } catch (error) {
-      console.error(`[UpdateProject Error] ${this.type}:`, error);
+      console.error(`[تحديث المشروع] ${this.type}:`, error);
     }
+  }
+
+  protected async delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }

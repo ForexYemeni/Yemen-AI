@@ -1,71 +1,80 @@
-// Agent Orchestrator - The core engine that coordinates all agents
+// Agent Orchestrator - محرك التنسيق الذكي (9 Agents)
+// ينفذ حلقة ذاتية: تحليل → تصميم → بناء → مراجعة → اختبار → أمان → نشر
 
-import { PlannerAgent } from './planner-agent';
-import { BuilderAgent } from './builder-agent';
+import { AnalyzerAgent } from './analyzer-agent';
+import { ArchitectAgent } from './architect-agent';
+import { DesignerAgent } from './designer-agent';
+import { DeveloperAgent } from './developer-agent';
+import { ReviewerAgent } from './reviewer-agent';
+import { TesterAgent } from './tester-agent';
 import { DebuggerAgent } from './debugger-agent';
-import { DevOpsAgent } from './devops-agent';
-import { AgentContext, ProjectIdea } from './types';
+import { SecurityAgent } from './security-agent';
+import { DeployerAgent } from './deployer-agent';
+import { AgentContext, ProjectIdea, AGENT_PIPELINE } from './types';
 import { db } from '@/lib/db';
 
 export class AgentOrchestrator {
-  private planner: PlannerAgent;
-  private builder: BuilderAgent;
+  private analyzer: AnalyzerAgent;
+  private architect: ArchitectAgent;
+  private designer: DesignerAgent;
+  private developer: DeveloperAgent;
+  private reviewer: ReviewerAgent;
+  private tester: TesterAgent;
   private debugger: DebuggerAgent;
-  private devops: DevOpsAgent;
+  private security: SecurityAgent;
+  private deployer: DeployerAgent;
 
   constructor() {
-    this.planner = new PlannerAgent();
-    this.builder = new BuilderAgent();
+    this.analyzer = new AnalyzerAgent();
+    this.architect = new ArchitectAgent();
+    this.designer = new DesignerAgent();
+    this.developer = new DeveloperAgent();
+    this.reviewer = new ReviewerAgent();
+    this.tester = new TesterAgent();
     this.debugger = new DebuggerAgent();
-    this.devops = new DevOpsAgent();
+    this.security = new SecurityAgent();
+    this.deployer = new DeployerAgent();
   }
 
-  /**
-   * Main execution loop - autonomous agent system
-   * 1. Create project record
-   * 2. Plan the project
-   * 3. Build the code
-   * 4. Debug if errors
-   * 5. Deploy the project
-   * 6. Loop on errors until success or max retries
-   */
   async execute(idea: ProjectIdea): Promise<string> {
-    // Create project in database
     const project = await db.project.create({
       data: {
         name: idea.name,
         description: idea.description,
         idea: idea.idea,
         status: 'pending',
+        progress: 0,
+        currentStep: 'في الانتظار',
       },
     });
 
     const projectId = project.id;
 
-    // Add initial system message
     await db.agentMessage.create({
       data: {
         projectId,
         role: 'system',
-        content: `🚀 New project started: "${idea.name}"\n\nIdea: ${idea.idea}\n\nThe AI Agent system will now autonomously plan, build, debug, and deploy your application.`,
+        content: `🚀 تم بدء مشروع جديد: "${idea.name}"\n\n💡 الفكرة: ${idea.idea}\n\nسيعمل نظام الوكلاء الذكي الآن بشكل ذاتي على: تحليل المتطلبات، تصميم البنية، تصميم الواجهات، بناء التطبيق، مراجعة الكود، اختبار الجودة، فحص الأمان، ونشر التطبيق.`,
       },
     });
 
-    // Start the autonomous loop in the background
+    // Start autonomous loop in background
     this.runAutonomousLoop(projectId, idea).catch(async (error) => {
-      console.error('[Orchestrator] Fatal error:', error);
+      console.error('[منسق الوكلاء] خطأ فادح:', error);
       await db.project.update({
         where: { id: projectId },
         data: {
           status: 'failed',
-          errorLog: `Fatal orchestrator error: ${error.message}`,
+          errorLog: `خطأ فادح: ${error.message}`,
+          progress: 0,
+          currentStep: 'فشل',
         },
       });
       await db.agentMessage.create({
         data: {
           projectId,
           role: 'system',
-          content: `❌ A fatal error occurred: ${error.message}. Please try again.`,
+          content: `❌ حدث خطأ فادح: ${error.message}. يرجى المحاولة مرة أخرى.`,
         },
       });
     });
@@ -79,68 +88,127 @@ export class AgentOrchestrator {
       idea: idea.idea,
       retryCount: 0,
       maxRetries: 3,
+      progress: 0,
     };
 
     try {
-      // PHASE 1: PLANNING
-      console.log(`[Orchestrator] Phase 1: Planning project ${projectId}`);
-      context = await this.planner.execute(context);
+      // المرحلة 1: تحليل المتطلبات
+      console.log(`[منسق] المرحلة 1: تحليل المتطلبات - ${projectId}`);
+      context = await this.analyzer.execute(context);
 
-      // PHASE 2: BUILDING
-      console.log(`[Orchestrator] Phase 2: Building project ${projectId}`);
-      context = await this.builder.execute(context);
+      // المرحلة 2: تصميم البنية
+      console.log(`[منسق] المرحلة 2: تصميم البنية - ${projectId}`);
+      context = await this.architect.execute(context);
 
-      // PHASE 3: DEBUGGING (if errors)
+      // المرحلة 3: تصميم الواجهات
+      console.log(`[منسق] المرحلة 3: تصميم الواجهات - ${projectId}`);
+      context = await this.designer.execute(context);
+
+      // المرحلة 4: بناء التطبيق
+      console.log(`[منسق] المرحلة 4: بناء التطبيق - ${projectId}`);
+      context = await this.developer.execute(context);
+
+      // إذا ظهرت أخطاء، حاول الإصلاح
       if (context.errorLog) {
-        console.log(`[Orchestrator] Phase 3: Debugging project ${projectId}`);
+        console.log(`[منسق] مرحلة إصلاح: تصحيح الأخطاء - ${projectId}`);
+        context = await this.debugger.execute(context);
 
-        // Autonomous debug loop
-        while (context.errorLog && context.retryCount < context.maxRetries) {
+        // أعد البناء بعد الإصلاح
+        if (!context.errorLog) {
+          await db.agentMessage.create({
+            data: {
+              projectId,
+              role: 'system',
+              content: `🔄 إعادة البناء بعد إصلاح الأخطاء...`,
+            },
+          });
+          context = await this.developer.execute(context);
+        }
+      }
+
+      // المرحلة 5: مراجعة الكود
+      if (!context.errorLog) {
+        console.log(`[منسق] المرحلة 5: مراجعة الكود - ${projectId}`);
+        context = await this.reviewer.execute(context);
+      }
+
+      // المرحلة 6: اختبار الجودة
+      if (!context.errorLog) {
+        console.log(`[منسق] المرحلة 6: اختبار الجودة - ${projectId}`);
+        context = await this.tester.execute(context);
+
+        // إذا فشلت الاختبارات، حاول الإصلاح
+        if (context.errorLog && context.retryCount < context.maxRetries) {
+          await db.agentMessage.create({
+            data: {
+              projectId,
+              role: 'system',
+              content: `🔧 فشلت بعض الاختبارات - جاري الإصلاح التلقائي...`,
+            },
+          });
           context = await this.debugger.execute(context);
 
-          if (context.errorLog) {
-            // Re-try building after debug attempt
-            await db.agentMessage.create({
-              data: {
-                projectId,
-                role: 'system',
-                content: `🔄 Retrying build after debug attempt ${context.retryCount}/${context.maxRetries}...`,
-              },
-            });
-            context = await this.builder.execute(context);
+          if (!context.errorLog) {
+            context = await this.tester.execute(context);
           }
         }
       }
 
-      // PHASE 4: DEPLOYMENT
+      // المرحلة 7: فحص الأمان
       if (!context.errorLog) {
-        console.log(`[Orchestrator] Phase 4: Deploying project ${projectId}`);
-        context = await this.devops.execute(context);
+        console.log(`[منسق] المرحلة 7: فحص الأمان - ${projectId}`);
+        context = await this.security.execute(context);
+      }
+
+      // المرحلة 8: النشر
+      if (!context.errorLog) {
+        console.log(`[منسق] المرحلة 8: النشر - ${projectId}`);
+        context = await this.deployer.execute(context);
       } else {
-        await db.project.update({
-          where: { id: projectId },
-          data: { status: 'failed' },
-        });
-        await db.agentMessage.create({
-          data: {
-            projectId,
-            role: 'system',
-            content: `❌ Project could not be completed after ${context.maxRetries} debug attempts. Please review the errors and try again.`,
-          },
-        });
+        // حلقة إصلاح ذاتية نهائية
+        while (context.errorLog && context.retryCount < context.maxRetries) {
+          await db.agentMessage.create({
+            data: {
+              projectId,
+              role: 'system',
+              content: `🔄 محاولة إصلاح ${context.retryCount + 1}/${context.maxRetries}...`,
+            },
+          });
+          context = await this.debugger.execute(context);
+
+          if (!context.errorLog) {
+            context = await this.developer.execute(context);
+            if (!context.errorLog) {
+              context = await this.tester.execute(context);
+            }
+          }
+        }
+
+        if (!context.errorLog) {
+          context = await this.security.execute(context);
+          context = await this.deployer.execute(context);
+        } else {
+          await db.project.update({
+            where: { id: projectId },
+            data: { status: 'failed', currentStep: 'فشل' },
+          });
+          await db.agentMessage.create({
+            data: {
+              projectId,
+              role: 'system',
+              content: `❌ لم يتم إكمال المشروع بعد ${context.maxRetries} محاولات إصلاح. يرجى مراجعة الأخطاء.`,
+            },
+          });
+        }
       }
     } catch (error: any) {
-      console.error(`[Orchestrator] Error in loop:`, error);
+      console.error(`[منسق] خطأ:`, error);
       await db.project.update({
         where: { id: projectId },
-        data: {
-          status: 'failed',
-          errorLog: error.message,
-        },
+        data: { status: 'failed', errorLog: error.message, currentStep: 'فشل' },
       });
     }
   }
 }
 
-// Singleton instance
 export const orchestrator = new AgentOrchestrator();

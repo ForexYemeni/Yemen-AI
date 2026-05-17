@@ -1,6 +1,5 @@
 // API Route: Create a new project and start the AI agent system
 import { NextResponse } from 'next/server';
-import { orchestrator } from '@/lib/agents';
 import { db } from '@/lib/db';
 
 export async function POST(request: Request) {
@@ -10,27 +9,55 @@ export async function POST(request: Request) {
 
     if (!name || !idea) {
       return NextResponse.json(
-        { error: 'Name and idea are required' },
+        { error: 'الاسم والفكرة مطلوبان' },
         { status: 400 }
       );
     }
 
-    // Start the autonomous agent system
-    const projectId = await orchestrator.execute({
-      name,
-      description: description || name,
-      idea,
+    // Create project first
+    const project = await db.project.create({
+      data: {
+        name,
+        description: description || name,
+        idea,
+        status: 'pending',
+        progress: 0,
+        currentStep: 'في الانتظار',
+      },
+    });
+
+    const projectId = project.id;
+
+    // Add initial system message
+    await db.agentMessage.create({
+      data: {
+        projectId,
+        role: 'system',
+        content: `🚀 تم بدء مشروع جديد: "${name}"\n\n💡 الفكرة: ${idea}\n\nسيعمل نظام الوكلاء الذكي الآن بشكل ذاتي.`,
+      },
+    });
+
+    // Start the autonomous agent system in background (non-blocking)
+    // Use dynamic import to avoid blocking the response
+    import('@/lib/agents/orchestrator').then(async ({ orchestrator }) => {
+      try {
+        await orchestrator.execute({ name, description: description || name, idea });
+      } catch (error) {
+        console.error('[Orchestrator] Background error:', error);
+      }
+    }).catch((error) => {
+      console.error('[Orchestrator] Import error:', error);
     });
 
     return NextResponse.json({
       success: true,
       projectId,
-      message: 'AI Agent system started! The project is being built autonomously.',
+      message: 'تم تشغيل نظام الوكلاء الذكي! جاري بناء المشروع بشكل ذاتي.',
     }, { status: 201 });
   } catch (error: any) {
-    console.error('[API Projects] Error:', error);
+    console.error('[API] Error:', error);
     return NextResponse.json(
-      { error: 'Failed to start project', details: error.message },
+      { error: 'فشل في بدء المشروع', details: error.message },
       { status: 500 }
     );
   }
@@ -49,9 +76,9 @@ export async function GET() {
 
     return NextResponse.json(projects);
   } catch (error: any) {
-    console.error('[API Projects] Error:', error);
+    console.error('[API] Error:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch projects' },
+      { error: 'فشل في جلب المشاريع' },
       { status: 500 }
     );
   }

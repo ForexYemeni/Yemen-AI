@@ -1,43 +1,40 @@
-// Debugger Agent - Analyzes and fixes errors automatically
-
 import { BaseAgent } from './base-agent';
 import { AgentContext, CodeFile } from './types';
 import ZAI from 'z-ai-web-dev-sdk';
 
 export class DebuggerAgent extends BaseAgent {
   type = 'debugger' as const;
-  name = 'Debugger Agent';
-  description = 'Analyzes errors and generates fixes automatically';
+  name = 'Debugger';
+  nameAr = 'مصحح الأخطاء';
 
   async execute(context: AgentContext): Promise<AgentContext> {
     const { projectId, errorLog, codeFiles, retryCount, maxRetries } = context;
 
     if (!errorLog) {
-      await this.log(projectId, 'no_errors', 'No errors to debug. Skipping.', 'info');
+      await this.log(projectId, 'لا_أخطاء', 'لا توجد أخطاء للإصلاح', 'info');
       return context;
     }
 
     if (retryCount >= maxRetries) {
-      await this.log(projectId, 'max_retries', `Max retries (${maxRetries}) reached. Stopping.`, 'error');
-      await this.addMessage(projectId, 'debugger', `❌ Maximum retry attempts reached (${maxRetries}). Please review the errors manually.`);
-      await this.updateProjectStatus(projectId, 'failed', { errorLog });
+      await this.log(projectId, 'حد_المحاولات', `تم الوصول للحد الأقصى من المحاولات (${maxRetries})`, 'error');
+      await this.addMessage(projectId, 'debugger', `❌ تم الوصول للحد الأقصى من محاولات الإصلاح (${maxRetries}). يرجى مراجعة الأخطاء يدوياً.`);
+      await this.updateProject(projectId, 'failed', context.progress, 'فشل', { errorLog });
       return context;
     }
 
-    await this.log(projectId, 'start_debugging', `Analyzing error (attempt ${retryCount + 1}/${maxRetries}): ${errorLog.substring(0, 200)}`, 'info');
-    await this.updateProjectStatus(projectId, 'debugging');
-    await this.addMessage(projectId, 'debugger', `🔧 Debugging error (attempt ${retryCount + 1}/${maxRetries})...`);
+    await this.log(projectId, 'بدء_الإصلاح', `تحليل الخطأ (محاولة ${retryCount + 1}/${maxRetries})`, 'info');
+    await this.updateProject(projectId, 'debugging', context.progress, 'إصلاح الأخطاء');
+    await this.addMessage(projectId, 'debugger', `🔧 جاري تحليل الخطأ وإصلاحه (محاولة ${retryCount + 1}/${maxRetries})...`);
 
     try {
       const fixResult = await this.analyzeAndFix(errorLog, codeFiles || [], projectId);
 
       if (fixResult.fixed) {
-        await this.log(projectId, 'debug_fixed', `Error fixed! Applied ${fixResult.fixes.length} fixes`, 'success');
-        await this.addMessage(projectId, 'debugger', `✅ Error fixed! Applied ${fixResult.fixes.length} fix(es):\n${fixResult.fixes.map((f: any) => `- ${f.description}`).join('\n')}`);
+        await this.log(projectId, 'تم_الإصلاح', `تم إصلاح الخطأ - ${fixResult.fixes.length} إصلاح مطبق`, 'success');
+        await this.addMessage(projectId, 'debugger', `✅ تم إصلاح الخطأ بنجاح!\n\n🔧 **الإصلاحات:** ${fixResult.fixes.length}\n${fixResult.fixes.map((f: any) => `- ${f.description}`).join('\n')}`);
 
-        // Update code files with fixes
         const fixedFiles = this.applyFixes(codeFiles || [], fixResult.fixes);
-        await this.updateProjectStatus(projectId, 'debugging', {
+        await this.updateProject(projectId, 'debugging', context.progress, 'إصلاح الأخطاء', {
           codeFiles: JSON.stringify(fixedFiles),
           errorLog: null,
         });
@@ -45,16 +42,15 @@ export class DebuggerAgent extends BaseAgent {
         context.codeFiles = fixedFiles;
         context.errorLog = undefined;
       } else {
-        await this.log(projectId, 'debug_unresolved', `Could not resolve error automatically`, 'warning');
-        await this.addMessage(projectId, 'debugger', `⚠️ Could not fully resolve the error. Suggestion: ${fixResult.suggestion}`);
-
+        await this.log(projectId, 'لم_يُصلح', 'لم يتمكن من إصلاح الخطأ تلقائياً', 'warning');
+        await this.addMessage(projectId, 'debugger', `⚠️ لم يتم إصلاح الخطأ تلقائياً. الاقتراح: ${fixResult.suggestion}`);
         context.retryCount = retryCount + 1;
       }
 
       return context;
     } catch (error: any) {
-      await this.log(projectId, 'debug_failed', `Debug attempt failed: ${error.message}`, 'error');
-      await this.addMessage(projectId, 'debugger', `❌ Debug attempt failed: ${error.message}`);
+      await this.log(projectId, 'فشل_الإصلاح', `فشل الإصلاح: ${error.message}`, 'error');
+      await this.addMessage(projectId, 'debugger', `❌ فشل الإصلاح: ${error.message}`);
       context.retryCount = retryCount + 1;
       return context;
     }
@@ -66,94 +62,52 @@ export class DebuggerAgent extends BaseAgent {
     suggestion: string;
   }> {
     const zai = await ZAI.create();
-
-    // Prepare context about existing code files
-    const filesContext = codeFiles
-      .slice(0, 5) // Limit to avoid token overflow
-      .map(f => `File: ${f.path}\n\`\`\`\n${f.content.substring(0, 500)}\n\`\`\``)
-      .join('\n\n');
-
-    const completion = await zai.chat.completions.create({
-      messages: [
-        {
-          role: 'system',
-          content: `You are an expert debugger. Analyze the error and provide fixes.
-You MUST respond with ONLY valid JSON (no markdown, no code blocks):
-{
-  "fixed": true/false,
-  "fixes": [
-    {
-      "file": "path/to/file",
-      "description": "What was fixed",
-      "content": "Complete fixed file content"
-    }
-  ],
-  "suggestion": "If fixed is false, provide a suggestion"
-}`
-        },
-        {
-          role: 'user',
-          content: `Analyze this error and provide fixes:
-
-**Error Log:**
-${errorLog}
-
-**Relevant Code Files:**
-${filesContext}
-
-Provide the complete corrected content for any files that need fixes.`
-        }
-      ],
-      temperature: 0.4,
-      max_tokens: 3000,
-    });
+    const filesContext = codeFiles.slice(0, 3).map(f => `ملف: ${f.path}\n${f.content.substring(0, 300)}`).join('\n\n');
 
     try {
+      const completion = await zai.chat.completions.create({
+        messages: [
+          {
+            role: 'system',
+            content: 'أنت خبير تصحيح أخطاء. حلل الخطأ واقدم إصلاحات. أجب ONLY بـ JSON: {"fixed": true/false, "fixes": [{"file": "path", "description": "وصف", "content": "المحتوى المصلح"}], "suggestion": "اقتراح إذا لم يُصلح"}'
+          },
+          {
+            role: 'user',
+            content: `حلل هذا الخطأ:\n${errorLog}\n\nالملفات:\n${filesContext}`
+          }
+        ],
+        temperature: 0.4,
+        max_tokens: 2000,
+      });
+
       let responseText = completion.choices[0]?.message?.content || '';
       if (responseText.startsWith('```')) {
         responseText = responseText.replace(/^```(?:json)?\s*/, '').replace(/```\s*$/, '');
       }
-
-      const result = JSON.parse(responseText.trim());
-      return result;
+      return JSON.parse(responseText.trim());
     } catch {
-      return {
-        fixed: false,
-        fixes: [],
-        suggestion: 'Unable to parse AI fix response. Manual intervention may be required.',
-      };
+      return { fixed: false, fixes: [], suggestion: 'لم يتمكن من تحليل الخطأ تلقائياً. يرجى المراجعة يدوياً.' };
     }
   }
 
   private applyFixes(files: CodeFile[], fixes: Array<{ file: string; content: string }>): CodeFile[] {
     const fixedFiles = [...files];
-
     for (const fix of fixes) {
-      const existingIndex = fixedFiles.findIndex(f => f.path === fix.file);
-      if (existingIndex >= 0) {
-        fixedFiles[existingIndex] = {
-          ...fixedFiles[existingIndex],
-          content: fix.content,
-        };
+      const idx = fixedFiles.findIndex(f => f.path === fix.file);
+      if (idx >= 0) {
+        fixedFiles[idx] = { ...fixedFiles[idx], content: fix.content };
       } else {
-        fixedFiles.push({
-          path: fix.file,
-          content: fix.content,
-          language: this.inferLanguage(fix.file),
-        });
+        fixedFiles.push({ path: fix.file, content: fix.content, language: this.inferLang(fix.file) });
       }
     }
-
     return fixedFiles;
   }
 
-  private inferLanguage(path: string): string {
-    if (path.endsWith('.tsx') || path.endsWith('.jsx')) return 'tsx';
+  private inferLang(path: string): string {
+    if (path.endsWith('.tsx')) return 'tsx';
     if (path.endsWith('.ts')) return 'typescript';
-    if (path.endsWith('.js')) return 'javascript';
     if (path.endsWith('.json')) return 'json';
     if (path.endsWith('.prisma')) return 'prisma';
-    if (path.endsWith('.css')) return 'css';
     return 'text';
   }
 }
