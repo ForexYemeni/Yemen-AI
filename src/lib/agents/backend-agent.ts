@@ -1,198 +1,301 @@
-// Backend Specialist Agent - متخصص الخلفية
-// يبني مسارات API والمنطق الخلفي والخدمات المتكاملة
+// ============================================================
+// Backend Agent — يبني APIs والمنطق البرمجي والمصادقة وربط البيانات
+// ============================================================
 
-import { BaseAgent } from './base-agent';
-import { AgentContext, CodeFile } from './types';
-import ZAI from 'z-ai-web-dev-sdk';
+import { CodeFile } from '../runtime/types';
+import { SharedContext } from '../runtime/shared-context';
+import { addLog, generateLogId } from '../runtime/memory';
 
-export class BackendAgent extends BaseAgent {
-  type = 'backend' as const;
-  name = 'Backend Specialist';
-  nameAr = 'متخصص الخلفية';
+export async function runBackendAgent(ctx: SharedContext): Promise<void> {
+  const projectId = ctx.projectId;
 
-  async execute(context: AgentContext): Promise<AgentContext> {
-    const { projectId, idea } = context;
+  addLog(projectId, {
+    id: generateLogId(),
+    projectId,
+    agent: 'backend',
+    action: 'start_dev',
+    content: 'بدأ تطوير الخلفية وبناء APIs...',
+    status: 'running',
+    timestamp: new Date().toISOString(),
+  });
 
-    await this.log(projectId, 'بدء_الخلفية', 'بدء تطوير مسارات API والمنطق الخلفي', 'info');
-    await this.updateProject(projectId, 'backend_dev', 40, 'تطوير الخلفية');
-    await this.addMessage(projectId, 'backend', '⚙️ جاري تطوير مسارات API والمنطق الخلفي...');
+  try {
+    const pmResult = ctx.getAgentResult('project_manager') as Record<string, unknown> | undefined;
+    const features = (pmResult?.analysis as Record<string, unknown>)?.features as string[] ?? [];
 
-    try {
-      await this.delay(2000);
-      const backendFiles = this.generateBackendFiles(idea);
+    // Generate API routes
+    ctx.addCodeFile({
+      path: 'src/app/api/health/route.ts',
+      content: generateHealthRoute(),
+      language: 'typescript',
+    });
 
-      await this.log(projectId, 'اكتمال_الخلفية', `تم إنشاء ${backendFiles.length} ملفات خلفية`, 'success');
-      await this.addMessage(projectId, 'backend', `✅ تم تطوير الخلفية بنجاح!\n\n🔗 **مسارات API:** CRUD كامل مع التحقق\n🛡️ **معالجة الأخطاء:** شاملة ومتقدمة\n📊 **الاستجابة:** JSON مع حالة HTTP صحيحة\n🔐 **الأمان:** التحقق من المدخلات`);
+    ctx.addCodeFile({
+      path: 'src/app/api/data/route.ts',
+      content: generateDataRoute(),
+      language: 'typescript',
+    });
 
-      const existingFiles = context.codeFiles || [];
-      context.codeFiles = [...existingFiles, ...backendFiles];
-      context.progress = 45;
-      await this.updateProject(projectId, 'backend_dev', 45, 'تطوير الخلفية', {
-        codeFiles: JSON.stringify([...existingFiles, ...backendFiles]),
+    // Generate auth if needed
+    if (features.some(f => /مصادقة|auth|تسجيل دخول/i.test(f))) {
+      ctx.addCodeFile({
+        path: 'src/app/api/auth/route.ts',
+        content: generateAuthRoute(),
+        language: 'typescript',
       });
 
-      return context;
-    } catch (error: any) {
-      await this.log(projectId, 'فشل_الخلفية', `فشل تطوير الخلفية: ${error.message}`, 'error');
-      await this.addMessage(projectId, 'backend', `❌ فشل تطوير الخلفية: ${error.message}`);
-      context.errorLog = error.message;
-      return context;
-    }
-  }
-
-  private generateBackendFiles(idea: string): CodeFile[] {
-    // Main CRUD API
-    const apiContent = `import { db } from '@/lib/db';
-import { NextResponse } from 'next/server';
-
-export async function GET(request: Request) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '20');
-    const search = searchParams.get('search') || '';
-    const priority = searchParams.get('priority') || '';
-    const category = searchParams.get('category') || '';
-
-    const where: any = {};
-    if (search) where.title = { contains: search };
-    if (priority) where.priority = priority;
-    if (category) where.category = category;
-
-    const [items, total] = await Promise.all([
-      db.item.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      db.item.count({ where }),
-    ]);
-
-    return NextResponse.json({
-      data: items,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-    });
-  } catch (error: any) {
-    return NextResponse.json({ error: 'فشل في جلب البيانات', details: error.message }, { status: 500 });
-  }
-}
-
-export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const { title, description, priority, category } = body;
-
-    if (!title || typeof title !== 'string' || title.trim().length < 2) {
-      return NextResponse.json({ error: 'العنوان مطلوب ويجب أن يكون حرفين على الأقل' }, { status: 400 });
-    }
-    if (title.length > 200) {
-      return NextResponse.json({ error: 'العنوان يجب ألا يتجاوز 200 حرف' }, { status: 400 });
+      ctx.addCodeFile({
+        path: 'src/lib/auth.ts',
+        content: generateAuthLib(),
+        language: 'typescript',
+      });
     }
 
-    const validPriorities = ['high', 'medium', 'low'];
-    if (priority && !validPriorities.includes(priority)) {
-      return NextResponse.json({ error: 'الأولوية غير صالحة' }, { status: 400 });
-    }
-
-    const item = await db.item.create({
-      data: { title: title.trim(), description: description?.trim(), priority: priority || 'medium', category: category?.trim() },
+    // Generate middleware
+    ctx.addCodeFile({
+      path: 'src/middleware.ts',
+      content: generateMiddleware(),
+      language: 'typescript',
     });
 
-    return NextResponse.json(item, { status: 201 });
-  } catch (error: any) {
-    return NextResponse.json({ error: 'فشل في إنشاء العنصر', details: error.message }, { status: 500 });
-  }
-}`;
+    // Generate utility functions
+    ctx.addCodeFile({
+      path: 'src/lib/api-utils.ts',
+      content: generateApiUtils(),
+      language: 'typescript',
+    });
 
-    // Dynamic route
-    const dynamicRouteContent = `import { db } from '@/lib/db';
-import { NextResponse } from 'next/server';
+    ctx.setAgentResult('backend', {
+      routes: ['/api/health', '/api/data', ...(features.some(f => /مصادقة|auth/i.test(f)) ? ['/api/auth'] : [])],
+      middleware: true,
+      status: 'completed',
+    });
 
-export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const { id } = await params;
-    const item = await db.item.findUnique({ where: { id } });
-    if (!item) return NextResponse.json({ error: 'العنصر غير موجود' }, { status: 404 });
-    return NextResponse.json(item);
-  } catch (error: any) {
-    return NextResponse.json({ error: 'فشل في جلب العنصر', details: error.message }, { status: 500 });
-  }
-}
+    ctx.addMessage('backend', 'frontend', 'تم بناء APIs — استخدم /api/health و /api/data', 'result');
+    ctx.addMessage('backend', 'db_guidance', 'APIs جاهزة — هل تحتاج نماذج قاعدة بيانات؟', 'request');
 
-export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const { id } = await params;
-    const body = await request.json();
-    const existing = await db.item.findUnique({ where: { id } });
-    if (!existing) return NextResponse.json({ error: 'العنصر غير موجود' }, { status: 404 });
+    addLog(projectId, {
+      id: generateLogId(),
+      projectId,
+      agent: 'backend',
+      action: 'dev_complete',
+      content: 'تم بناء APIs والمنطق البرمجي',
+      status: 'success',
+      timestamp: new Date().toISOString(),
+    });
 
-    const item = await db.item.update({ where: { id }, data: body });
-    return NextResponse.json(item);
-  } catch (error: any) {
-    return NextResponse.json({ error: 'فشل في تحديث العنصر', details: error.message }, { status: 500 });
-  }
-}
-
-export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const { id } = await params;
-    const body = await request.json();
-    const existing = await db.item.findUnique({ where: { id } });
-    if (!existing) return NextResponse.json({ error: 'العنصر غير موجود' }, { status: 404 });
-
-    const item = await db.item.update({ where: { id }, data: body });
-    return NextResponse.json(item);
-  } catch (error: any) {
-    return NextResponse.json({ error: 'فشل في تحديث العنصر', details: error.message }, { status: 500 });
+    ctx.setProgress(55);
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : 'خطأ في تطوير الخلفية';
+    ctx.addMessage('backend', 'all', `فشل تطوير الخلفية: ${errMsg}`, 'error');
+    addLog(projectId, {
+      id: generateLogId(),
+      projectId,
+      agent: 'backend',
+      action: 'dev_error',
+      content: errMsg,
+      status: 'error',
+      timestamp: new Date().toISOString(),
+    });
+    throw error;
   }
 }
 
-export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const { id } = await params;
-    const existing = await db.item.findUnique({ where: { id } });
-    if (!existing) return NextResponse.json({ error: 'العنصر غير موجود' }, { status: 404 });
-
-    await db.item.delete({ where: { id } });
-    return NextResponse.json({ success: true, message: 'تم حذف العنصر بنجاح' });
-  } catch (error: any) {
-    return NextResponse.json({ error: 'فشل في حذف العنصر', details: error.message }, { status: 500 });
-  }
-}`;
-
-    // Stats API
-    const statsApiContent = `import { db } from '@/lib/db';
-import { NextResponse } from 'next/server';
+function generateHealthRoute(): string {
+  return `import { NextResponse } from 'next/server';
 
 export async function GET() {
+  return NextResponse.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
+}
+`;
+}
+
+function generateDataRoute(): string {
+  return `import { NextRequest, NextResponse } from 'next/server';
+
+// In-memory data store (replace with DB connection for production)
+let data: Record<string, unknown>[] = [];
+
+export async function GET(request: NextRequest) {
   try {
-    const [total, high, medium, low] = await Promise.all([
-      db.item.count(),
-      db.item.count({ where: { priority: 'high' } }),
-      db.item.count({ where: { priority: 'medium' } }),
-      db.item.count({ where: { priority: 'low' } }),
-    ]);
-
-    const recentItems = await db.item.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 5,
-    });
-
+    const { searchParams } = new URL(request.url);
+    const page = parseInt(searchParams.get('page') ?? '1');
+    const limit = parseInt(searchParams.get('limit') ?? '10');
+    const start = (page - 1) * limit;
+    
     return NextResponse.json({
-      total,
-      byPriority: { high, medium, low },
-      recent: recentItems,
+      data: data.slice(start, start + limit),
+      total: data.length,
+      page,
+      limit,
     });
-  } catch (error: any) {
-    return NextResponse.json({ error: 'فشل في جلب الإحصائيات' }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'فشل في جلب البيانات' },
+      { status: 500 }
+    );
   }
-}`;
+}
 
-    return [
-      { path: 'src/app/api/items/route.ts', content: apiContent, language: 'typescript' },
-      { path: 'src/app/api/items/[id]/route.ts', content: dynamicRouteContent, language: 'typescript' },
-      { path: 'src/app/api/stats/route.ts', content: statsApiContent, language: 'typescript' },
-    ];
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const item = {
+      id: Date.now().toString(),
+      ...body,
+      createdAt: new Date().toISOString(),
+    };
+    data.push(item);
+    
+    return NextResponse.json(item, { status: 201 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'فشل في إنشاء العنصر' },
+      { status: 500 }
+    );
   }
+}
+`;
+}
+
+function generateAuthRoute(): string {
+  return `import { NextRequest, NextResponse } from 'next/server';
+
+// Simple auth route — replace with NextAuth.js for production
+export async function POST(request: NextRequest) {
+  try {
+    const { email, password } = await request.json();
+    
+    if (!email || !password) {
+      return NextResponse.json(
+        { error: 'البريد الإلكتروني وكلمة المرور مطلوبان' },
+        { status: 400 }
+      );
+    }
+
+    // TODO: Verify credentials against database
+    // For now, return a mock token
+    const token = Buffer.from(\`\${email}:\${Date.now()}\`).toString('base64');
+    
+    return NextResponse.json({
+      success: true,
+      token,
+      user: { email },
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'فشل تسجيل الدخول' },
+      { status: 500 }
+    );
+  }
+}
+`;
+}
+
+function generateAuthLib(): string {
+  return `// Authentication utility functions
+// Replace with NextAuth.js configuration for production
+
+export interface User {
+  id: string;
+  email: string;
+  name?: string;
+}
+
+export function verifyToken(token: string): User | null {
+  try {
+    const decoded = Buffer.from(token, 'base64').toString();
+    const [email] = decoded.split(':');
+    return { id: email, email };
+  } catch {
+    return null;
+  }
+}
+
+export function requireAuth(request: Request): User | Response {
+  const authHeader = request.headers.get('authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return new Response(JSON.stringify({ error: 'مطلوب مصادقة' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+  
+  const token = authHeader.substring(7);
+  const user = verifyToken(token);
+  if (!user) {
+    return new Response(JSON.stringify({ error: 'رمز غير صالح' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+  
+  return user;
+}
+`;
+}
+
+function generateMiddleware(): string {
+  return `import { NextRequest, NextResponse } from 'next/server';
+
+export function middleware(request: NextRequest) {
+  // Add security headers
+  const response = NextResponse.next();
+  
+  response.headers.set('X-Content-Type-Options', 'nosniff');
+  response.headers.set('X-Frame-Options', 'DENY');
+  response.headers.set('X-XSS-Protection', '1; mode=block');
+  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  
+  // CORS for API routes
+  if (request.nextUrl.pathname.startsWith('/api/')) {
+    response.headers.set('Access-Control-Allow-Origin', '*');
+    response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  }
+  
+  return response;
+}
+
+export const config = {
+  matcher: ['/api/:path*', '/((?!_next/static|_next/image|favicon.ico).*)'],
+};
+`;
+}
+
+function generateApiUtils(): string {
+  return `// API Utility Functions
+
+export function successResponse(data: unknown, status = 200) {
+  return Response.json({ success: true, data }, { status });
+}
+
+export function errorResponse(message: string, status = 500) {
+  return Response.json({ success: false, error: message }, { status });
+}
+
+export function paginate<T>(items: T[], page: number, limit: number) {
+  const start = (page - 1) * limit;
+  return {
+    data: items.slice(start, start + limit),
+    total: items.length,
+    page,
+    limit,
+    totalPages: Math.ceil(items.length / limit),
+  };
+}
+
+export function validateRequired(fields: Record<string, unknown>): string | null {
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === undefined || value === null || value === '') {
+      return \`الحقل \${key} مطلوب\`;
+    }
+  }
+  return null;
+}
+`;
 }

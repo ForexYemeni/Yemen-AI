@@ -1,66 +1,67 @@
-// API Route: Get/Update/Delete a specific project
-// يعمل حتى بدون MongoDB
-import { NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import { ProjectModel, AgentLogModel, AgentMessageModel } from '@/lib/models';
+// ============================================================
+// GET /api/projects/[id] — Get project detail with logs and messages
+// DELETE /api/projects/[id] — Delete project
+// ============================================================
+
+import { NextRequest, NextResponse } from 'next/server';
+import { runtimeStore, deleteProject, getProjectLogs, getProjectMessages } from '@/lib/runtime/memory';
 
 export async function GET(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const conn = await dbConnect();
     const { id } = await params;
-
-    if (!conn) {
-      return NextResponse.json({ error: 'قاعدة البيانات غير متصلة' }, { status: 503 });
-    }
-
-    const project = await ProjectModel.findById(id).lean();
+    const project = runtimeStore.projects.get(id);
 
     if (!project) {
-      return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'المشروع غير موجود' },
+        { status: 404 }
+      );
     }
 
-    const logs = await AgentLogModel.find({ projectId: id })
-      .sort({ createdAt: -1 })
-      .limit(100)
-      .lean();
-
-    const messages = await AgentMessageModel.find({ projectId: id })
-      .sort({ createdAt: 1 })
-      .limit(200)
-      .lean();
+    const logs = getProjectLogs(id);
+    const messages = getProjectMessages(id);
+    const sharedContext = runtimeStore.sharedContexts.get(id);
 
     return NextResponse.json({
-      ...project,
-      id: project._id.toString(),
-      logs: logs.map(l => ({ ...l, id: l._id.toString() })),
-      messages: messages.map(m => ({ ...m, id: m._id.toString() })),
+      project,
+      logs,
+      messages,
+      codeFiles: sharedContext?.codeFiles ?? [],
+      errorReports: sharedContext?.errorReports ?? [],
+      executionPlan: sharedContext?.executionPlan ?? null,
+      agentResults: sharedContext ? Object.fromEntries(sharedContext.agentResults) : {},
     });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'فشل في جلب تفاصيل المشروع' },
+      { status: 500 }
+    );
   }
 }
 
 export async function DELETE(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const conn = await dbConnect();
     const { id } = await params;
+    const deleted = deleteProject(id);
 
-    if (!conn) {
-      return NextResponse.json({ error: 'قاعدة البيانات غير متصلة' }, { status: 503 });
+    if (!deleted) {
+      return NextResponse.json(
+        { error: 'المشروع غير موجود' },
+        { status: 404 }
+      );
     }
 
-    await AgentLogModel.deleteMany({ projectId: id });
-    await AgentMessageModel.deleteMany({ projectId: id });
-    await ProjectModel.findByIdAndDelete(id);
-
-    return NextResponse.json({ success: true });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ success: true, message: 'تم حذف المشروع' });
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'فشل في حذف المشروع' },
+      { status: 500 }
+    );
   }
 }

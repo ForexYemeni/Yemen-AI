@@ -1,329 +1,283 @@
-// Frontend Specialist Agent - متخصص الواجهة الأمامية
-// يبني مكونات الواجهة الأمامية والصفحات التفاعلية
+// ============================================================
+// Frontend Agent — يبني React/Next.js ويحسن الأداء والتفاعل
+// ============================================================
 
-import { BaseAgent } from './base-agent';
-import { AgentContext, CodeFile } from './types';
-import ZAI from 'z-ai-web-dev-sdk';
+import { CodeFile } from '../runtime/types';
+import { SharedContext } from '../runtime/shared-context';
+import { addLog, generateLogId } from '../runtime/memory';
 
-export class FrontendAgent extends BaseAgent {
-  type = 'frontend' as const;
-  name = 'Frontend Specialist';
-  nameAr = 'متخصص الواجهة';
+export async function runFrontendAgent(ctx: SharedContext): Promise<void> {
+  const projectId = ctx.projectId;
 
-  async execute(context: AgentContext): Promise<AgentContext> {
-    const { projectId, idea, plan } = context;
-
-    await this.log(projectId, 'بدء_الواجهة', 'بدء تطوير مكونات الواجهة الأمامية المتقدمة', 'info');
-    await this.updateProject(projectId, 'frontend_dev', 32, 'تطوير الواجهة الأمامية');
-    await this.addMessage(projectId, 'frontend', '🖥️ جاري تطوير مكونات الواجهة الأمامية والصفحات التفاعلية...');
-
-    try {
-      await this.delay(2000);
-      const frontendFiles = await this.generateFrontendComponents(idea, projectId);
-
-      await this.log(projectId, 'اكتمال_الواجهة', `تم إنشاء ${frontendFiles.length} مكونات واجهة`, 'success');
-      await this.addMessage(projectId, 'frontend', `✅ تم تطوير الواجهة الأمامية بنجاح!\n\n🖥️ **المكونات:** ${frontendFiles.length}\n📱 **التصميم المتجاوب:** متوافق مع جميع الأجهزة\n🎨 **الأنيميشن:** حركات سلسة واحترافية\n♿ **إمكانية الوصول:** معايير WCAG مطبقة`);
-
-      const existingFiles = context.codeFiles || [];
-      context.codeFiles = [...existingFiles, ...frontendFiles];
-      context.progress = 38;
-      await this.updateProject(projectId, 'frontend_dev', 38, 'تطوير الواجهة الأمامية', {
-        codeFiles: JSON.stringify([...existingFiles, ...frontendFiles]),
-      });
-
-      return context;
-    } catch (error: any) {
-      await this.log(projectId, 'فشل_الواجهة', `فشل تطوير الواجهة: ${error.message}`, 'error');
-      await this.addMessage(projectId, 'frontend', `❌ فشل تطوير الواجهة: ${error.message}`);
-      context.errorLog = error.message;
-      return context;
-    }
-  }
-
-  private async generateFrontendComponents(idea: string, projectId: string): Promise<CodeFile[]> {
-    const zai = await ZAI.create();
-    const files: CodeFile[] = [];
-
-    // Generate component file
-    const componentCode = `'use client';
-
-import { useState, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import {
-  Plus, Trash2, Edit3, Loader2, Sparkles,
-  Filter, SortAsc, Grid3X3, List, Search
-} from 'lucide-react';
-
-interface ItemData {
-  id: string;
-  title: string;
-  description?: string;
-  status: string;
-  priority: string;
-  category?: string;
-  createdAt: string;
-}
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.1 } },
-};
-
-const itemVariants = {
-  hidden: { opacity: 0, y: 20 },
-  show: { opacity: 1, y: 0 },
-};
-
-export function ItemManager() {
-  const [items, setItems] = useState<ItemData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterPriority, setFilterPriority] = useState<string>('all');
-  const [showAddDialog, setShowAddDialog] = useState(false);
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [priority, setPriority] = useState('medium');
-
-  useEffect(() => { fetchItems(); }, []);
-
-  const fetchItems = async () => {
-    try {
-      const res = await fetch('/api/items');
-      const data = await res.json();
-      setItems(data);
-    } catch (error) { console.error(error); }
-    finally { setLoading(false); }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/items', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, description, priority }),
-      });
-      if (res.ok) {
-        setTitle(''); setDescription(''); setPriority('medium');
-        setShowAddDialog(false); fetchItems();
-      }
-    } catch (error) { console.error(error); }
-    finally { setSubmitting(false); }
-  };
-
-  const handleDelete = async (id: string) => {
-    try { await fetch(\`/api/items/\${id}\`, { method: 'DELETE' }); fetchItems(); }
-    catch (error) { console.error(error); }
-  };
-
-  const filteredItems = items.filter(item => {
-    const matchesSearch = item.title.includes(searchQuery) || (item.description || '').includes(searchQuery);
-    const matchesFilter = filterPriority === 'all' || item.priority === filterPriority;
-    return matchesSearch && matchesFilter;
+  addLog(projectId, {
+    id: generateLogId(),
+    projectId,
+    agent: 'frontend',
+    action: 'start_dev',
+    content: 'بدأ تطوير الواجهة الأمامية...',
+    status: 'running',
+    timestamp: new Date().toISOString(),
   });
 
-  const priorityLabels: Record<string, string> = { high: 'عالي', medium: 'متوسط', low: 'منخفض' };
-  const priorityColors: Record<string, string> = {
-    high: 'bg-red-100 text-red-700 border-red-200',
-    medium: 'bg-amber-100 text-amber-700 border-amber-200',
-    low: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-  };
+  try {
+    const pmResult = ctx.getAgentResult('project_manager') as Record<string, unknown> | undefined;
+    const pages = (pmResult?.analysis as Record<string, unknown>)?.pages as string[] ?? ['الرئيسية', 'حول'];
 
-  return (
-    <div className="space-y-6" dir="rtl">
-      {/* شريط الأدوات */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            className="pr-9"
-            placeholder="بحث..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant={filterPriority === 'all' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setFilterPriority('all')}
-          >
-            الكل
-          </Button>
-          {['high', 'medium', 'low'].map((p) => (
-            <Button key={p} variant={filterPriority === p ? 'default' : 'outline'} size="sm"
-              onClick={() => setFilterPriority(p)}>
-              {priorityLabels[p]}
-            </Button>
-          ))}
-        </div>
-        <div className="flex items-center border rounded-lg overflow-hidden">
-          <Button variant={viewMode === 'grid' ? 'default' : 'ghost'} size="icon" className="h-8 w-8"
-            onClick={() => setViewMode('grid')}><Grid3X3 className="h-4 w-4" /></Button>
-          <Button variant={viewMode === 'list' ? 'default' : 'ghost'} size="icon" className="h-8 w-8"
-            onClick={() => setViewMode('list')}><List className="h-4 w-4" /></Button>
-        </div>
-        <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-          <DialogTrigger asChild>
-            <Button className="gap-1.5 bg-gradient-to-l from-violet-600 to-indigo-600">
-              <Plus className="h-4 w-4" />إضافة جديد
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>إضافة عنصر جديد</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label>العنوان</Label>
-                <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="أدخل العنوان..." required />
-              </div>
-              <div className="space-y-2">
-                <Label>الوصف</Label>
-                <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="أدخل الوصف..." rows={3} />
-              </div>
-              <div className="space-y-2">
-                <Label>الأولوية</Label>
-                <div className="flex gap-2">
-                  {['high', 'medium', 'low'].map((p) => (
-                    <Button key={p} type="button" variant={priority === p ? 'default' : 'outline'} size="sm"
-                      onClick={() => setPriority(p)}>{priorityLabels[p]}</Button>
-                  ))}
-                </div>
-              </div>
-              <Button type="submit" disabled={submitting} className="w-full">
-                {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-                إضافة
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
+    // Generate layout
+    ctx.addCodeFile({
+      path: 'src/app/layout.tsx',
+      content: generateLayout(),
+      language: 'typescript',
+    });
 
-      {/* القائمة */}
-      {loading ? (
-        <div className="text-center py-12"><Loader2 className="h-8 w-8 animate-spin mx-auto text-violet-500" /></div>
-      ) : filteredItems.length === 0 ? (
-        <Card className="border-dashed">
-          <CardContent className="text-center py-12">
-            <Sparkles className="h-12 w-12 mx-auto text-violet-400 mb-4" />
-            <h3 className="text-lg font-bold mb-2">لا توجد عناصر</h3>
-            <p className="text-muted-foreground">أضف أول عنصر لتبدأ!</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <motion.div
-          variants={containerVariants}
-          initial="hidden"
-          animate="show"
-          className={viewMode === 'grid' ? 'grid gap-4 sm:grid-cols-2 lg:grid-cols-3' : 'space-y-3'}
-        >
-          <AnimatePresence>
-            {filteredItems.map((item) => (
-              <motion.div key={item.id} variants={itemVariants} exit={{ opacity: 0, scale: 0.95 }}>
-                <Card className="group hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between">
-                      <CardTitle className="text-lg">{item.title}</CardTitle>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={() => handleDelete(item.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    {item.description && <p className="text-sm text-muted-foreground mb-3">{item.description}</p>}
-                    <div className="flex items-center justify-between">
-                      <Badge className={priorityColors[item.priority] || ''}>{priorityLabels[item.priority] || item.priority}</Badge>
-                      <span className="text-xs text-muted-foreground">{new Date(item.createdAt).toLocaleDateString('ar')}</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </motion.div>
-      )}
-    </div>
-  );
-}`;
+    // Generate main page
+    ctx.addCodeFile({
+      path: 'src/app/page.tsx',
+      content: generateMainPage(ctx.idea, pages),
+      language: 'typescript',
+    });
 
-    files.push({ path: 'src/components/ItemManager.tsx', content: componentCode, language: 'tsx' });
+    // Generate components
+    ctx.addCodeFile({
+      path: 'src/components/Header.tsx',
+      content: generateHeader(pages),
+      language: 'typescript',
+    });
 
-    // Generate header component
-    const headerCode = `'use client';
+    ctx.addCodeFile({
+      path: 'src/components/Footer.tsx',
+      content: generateFooter(),
+      language: 'typescript',
+    });
 
-import { Sparkles, Moon, Sun } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { useState, useEffect } from 'react';
+    // Generate globals.css
+    ctx.addCodeFile({
+      path: 'src/app/globals.css',
+      content: generateGlobalsCss(),
+      language: 'css',
+    });
 
-interface AppHeaderProps {
-  title: string;
-  subtitle?: string;
+    ctx.setAgentResult('frontend', {
+      pages: pages.length,
+      components: ['Header', 'Footer', 'Page'],
+      status: 'completed',
+    });
+
+    ctx.addMessage('frontend', 'backend', 'تم بناء الواجهة — أرسل لي بيانات الـ API', 'request');
+    ctx.addMessage('frontend', 'qa_debug', 'الواجهة جاهزة للفحص', 'result');
+
+    addLog(projectId, {
+      id: generateLogId(),
+      projectId,
+      agent: 'frontend',
+      action: 'dev_complete',
+      content: `تم بناء ${pages.length} صفحة ومكونات الواجهة`,
+      status: 'success',
+      timestamp: new Date().toISOString(),
+    });
+
+    ctx.setProgress(40);
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : 'خطأ في تطوير الواجهة';
+    ctx.addMessage('frontend', 'all', `فشل تطوير الواجهة: ${errMsg}`, 'error');
+    addLog(projectId, {
+      id: generateLogId(),
+      projectId,
+      agent: 'frontend',
+      action: 'dev_error',
+      content: errMsg,
+      status: 'error',
+      timestamp: new Date().toISOString(),
+    });
+    throw error;
+  }
 }
 
-export function AppHeader({ title, subtitle }: AppHeaderProps) {
-  const [isDark, setIsDark] = useState(false);
+function generateLayout(): string {
+  return `'use client';
 
-  useEffect(() => {
-    const saved = localStorage.getItem('theme');
-    if (saved === 'dark') { setIsDark(true); document.documentElement.classList.add('dark'); }
-  }, []);
+import "./globals.css";
+import { Header } from "@/components/Header";
+import { Footer } from "@/components/Footer";
 
-  const toggleTheme = () => {
-    setIsDark(!isDark);
-    document.documentElement.classList.toggle('dark');
-    localStorage.setItem('theme', isDark ? 'light' : 'dark');
-  };
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="ar" dir="rtl">
+      <body className="min-h-screen flex flex-col bg-white text-gray-900 font-sans">
+        <Header />
+        <main className="flex-1">{children}</main>
+        <Footer />
+      </body>
+    </html>
+  );
+}
+`;
+}
+
+function generateMainPage(idea: string, pages: string[]): string {
+  return `'use client';
+
+export default function HomePage() {
+  return (
+    <div className="min-h-screen">
+      {/* Hero Section */}
+      <section className="relative py-20 px-4">
+        <div className="max-w-6xl mx-auto text-center">
+          <h1 className="text-4xl md:text-6xl font-bold mb-6 bg-gradient-to-l from-violet-600 to-cyan-500 bg-clip-text text-transparent">
+            ${idea.substring(0, 80)}
+          </h1>
+          <p className="text-lg md:text-xl text-gray-600 max-w-2xl mx-auto mb-8">
+            منصة متكاملة تقدم أفضل التجارب والخدمات
+          </p>
+          <div className="flex gap-4 justify-center">
+            <button className="px-8 py-3 bg-violet-600 text-white rounded-xl hover:bg-violet-700 transition-colors">
+              ابدأ الآن
+            </button>
+            <button className="px-8 py-3 border-2 border-violet-600 text-violet-600 rounded-xl hover:bg-violet-50 transition-colors">
+              اعرف المزيد
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Features Section */}
+      <section className="py-16 px-4 bg-gray-50">
+        <div className="max-w-6xl mx-auto">
+          <h2 className="text-3xl font-bold text-center mb-12">المميزات</h2>
+          <div className="grid md:grid-cols-3 gap-8">
+            ${pages.slice(0, 6).map(p => `
+            <div className="bg-white p-6 rounded-2xl shadow-sm hover:shadow-md transition-shadow">
+              <div className="w-12 h-12 bg-violet-100 rounded-xl flex items-center justify-center mb-4">
+                <span className="text-violet-600 text-xl">✦</span>
+              </div>
+              <h3 className="text-xl font-semibold mb-2">${p}</h3>
+              <p className="text-gray-600">وصف مختصر لقسم ${p}</p>
+            </div>`).join('')}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+`;
+}
+
+function generateHeader(pages: string[]): string {
+  return `'use client';
+
+import { useState } from 'react';
+
+export function Header() {
+  const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <header className="border-b bg-background/80 backdrop-blur-xl sticky top-0 z-50" dir="rtl">
-      <div className="container mx-auto px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg">
-            <Sparkles className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold">{title}</h1>
-            {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
-          </div>
+    <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b">
+      <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+        <div className="text-xl font-bold bg-gradient-to-l from-violet-600 to-cyan-500 bg-clip-text text-transparent">
+          مشروعي
         </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="secondary" className="text-xs">صُنع بواسطة الذكاء الاصطناعي</Badge>
-          <Button variant="ghost" size="icon" onClick={toggleTheme}>
-            {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </Button>
-        </div>
+        
+        <nav className="hidden md:flex items-center gap-6">
+          ${pages.slice(0, 5).map(p => `<a href="#" className="text-gray-600 hover:text-violet-600 transition-colors">${p}</a>`).join('\n          ')}
+        </nav>
+
+        <button
+          className="md:hidden p-2"
+          onClick={() => setIsOpen(!isOpen)}
+          aria-label="القائمة"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isOpen ? "M6 18L18 6M6 6l12 12" : "M4 6h16M4 12h16M4 18h16"} />
+          </svg>
+        </button>
       </div>
+
+      {isOpen && (
+        <div className="md:hidden border-t bg-white px-4 py-2">
+          ${pages.slice(0, 5).map(p => `<a href="#" className="block py-2 text-gray-600 hover:text-violet-600">${p}</a>`).join('\n          ')}
+        </div>
+      )}
     </header>
   );
-}`;
+}
+`;
+}
 
-    files.push({ path: 'src/components/AppHeader.tsx', content: headerCode, language: 'tsx' });
-
-    // Generate footer component
-    const footerCode = `export function AppFooter() {
+function generateFooter(): string {
+  return `export function Footer() {
   return (
-    <footer className="border-t mt-auto py-6 text-center text-sm text-muted-foreground" dir="rtl">
-      <p>صُنع بكل ❤️ بواسطة مصنع الوكلاء الذكي — 15 وكيل ذكاء اصطناعي يعملون بشكل ذاتي</p>
+    <footer className="bg-gray-900 text-gray-400 py-12 px-4">
+      <div className="max-w-6xl mx-auto grid md:grid-cols-4 gap-8">
+        <div>
+          <h3 className="text-white text-lg font-semibold mb-4">مشروعي</h3>
+          <p className="text-sm">منصة متكاملة تقدم أفضل الخدمات</p>
+        </div>
+        <div>
+          <h4 className="text-white font-medium mb-4">روابط سريعة</h4>
+          <ul className="space-y-2 text-sm">
+            <li><a href="#" className="hover:text-white transition-colors">الرئيسية</a></li>
+            <li><a href="#" className="hover:text-white transition-colors">عن المنصة</a></li>
+            <li><a href="#" className="hover:text-white transition-colors">تواصل معنا</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4 className="text-white font-medium mb-4">القانوني</h4>
+          <ul className="space-y-2 text-sm">
+            <li><a href="#" className="hover:text-white transition-colors">سياسة الخصوصية</a></li>
+            <li><a href="#" className="hover:text-white transition-colors">الشروط والأحكام</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4 className="text-white font-medium mb-4">تواصل</h4>
+          <p className="text-sm">info@example.com</p>
+        </div>
+      </div>
+      <div className="max-w-6xl mx-auto mt-8 pt-8 border-t border-gray-800 text-center text-sm">
+        © 2024 مشروعي. جميع الحقوق محفوظة.
+      </div>
     </footer>
   );
-}`;
+}
+`;
+}
 
-    files.push({ path: 'src/components/AppFooter.tsx', content: footerCode, language: 'tsx' });
+function generateGlobalsCss(): string {
+  return `@import "tailwindcss";
 
-    return files;
-  }
+:root {
+  --background: #ffffff;
+  --foreground: #111827;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', 'Cairo', sans-serif;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+`;
 }

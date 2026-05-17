@@ -1,73 +1,46 @@
-// API Route: Create a new project and start the AI agent system
-// يعمل حتى بدون MongoDB (يعيد استجابة تجريبية)
-import { NextResponse } from 'next/server';
-import dbConnect, { isMongoConfigured } from '@/lib/mongodb';
-import { ProjectModel, AgentMessageModel } from '@/lib/models';
+// ============================================================
+// POST /api/projects — Create a new project (in-memory)
+// GET /api/projects — List all projects
+// ============================================================
 
-export async function POST(request: Request) {
+import { NextRequest, NextResponse } from 'next/server';
+import { runtimeStore, generateId } from '@/lib/runtime/memory';
+
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, description, idea } = body;
+    const { name, idea } = body;
 
     if (!name || !idea) {
       return NextResponse.json(
-        { error: 'الاسم والفكرة مطلوبان' },
+        { error: 'اسم المشروع والفكرة مطلوبان' },
         { status: 400 }
       );
     }
 
-    // Check if MongoDB is available
-    const conn = await dbConnect();
+    const id = generateId();
+    const now = new Date().toISOString();
 
-    if (!conn) {
-      // Demo mode - return success without DB
-      return NextResponse.json({
-        success: true,
-        projectId: 'demo-' + Date.now(),
-        message: 'تم إنشاء المشروع في الوضع التجريبي. لتفعيل الحفظ، قم بربط MongoDB.',
-        demo: true,
-      }, { status: 201 });
-    }
-
-    // Create project in MongoDB
-    const project = await ProjectModel.create({
+    const project = {
+      id,
       name,
-      description: description || name,
+      description: idea.substring(0, 200),
       idea,
-      status: 'pending',
+      status: 'pending' as const,
       progress: 0,
       currentStep: 'في الانتظار',
-    });
+      createdAt: now,
+      updatedAt: now,
+    };
 
-    const projectId = project._id.toString();
+    runtimeStore.projects.set(id, project);
+    runtimeStore.agentLogs.set(id, []);
+    runtimeStore.agentMessages.set(id, []);
 
-    // Add initial system message
-    await AgentMessageModel.create({
-      projectId: project._id,
-      role: 'system',
-      content: `🚀 تم بدء مشروع جديد: "${name}"\n\n💡 الفكرة: ${idea}\n\nسيعمل نظام الوكلاء الذكي الآن بشكل ذاتي.`,
-    });
-
-    // Start the autonomous agent system in background (non-blocking)
-    import('@/lib/agents/orchestrator').then(async ({ orchestrator }) => {
-      try {
-        await orchestrator.execute({ name, description: description || name, idea });
-      } catch (error) {
-        console.error('[Orchestrator] Background error:', error);
-      }
-    }).catch((error) => {
-      console.error('[Orchestrator] Import error:', error);
-    });
-
-    return NextResponse.json({
-      success: true,
-      projectId,
-      message: 'تم تشغيل نظام الوكلاء الذكي! جاري بناء المشروع بشكل ذاتي.',
-    }, { status: 201 });
-  } catch (error: any) {
-    console.error('[API] Error:', error);
+    return NextResponse.json({ success: true, project }, { status: 201 });
+  } catch (error) {
     return NextResponse.json(
-      { error: 'فشل في بدء المشروع', details: error.message },
+      { error: 'فشل في إنشاء المشروع' },
       { status: 500 }
     );
   }
@@ -75,42 +48,14 @@ export async function POST(request: Request) {
 
 export async function GET() {
   try {
-    const conn = await dbConnect();
-
-    if (!conn) {
-      // Demo mode - return empty projects list
-      return NextResponse.json([]);
-    }
-
-    const projects = await ProjectModel.find({})
-      .sort({ createdAt: -1 })
-      .lean();
-
-    // Add log and message counts
-    const projectsWithCounts = await Promise.all(
-      projects.map(async (project) => {
-        try {
-          const logCount = await AgentLogModel.countDocuments({ projectId: project._id });
-          const messageCount = await AgentMessageModel.countDocuments({ projectId: project._id });
-          return {
-            ...project,
-            id: project._id.toString(),
-            _count: { logs: logCount, messages: messageCount },
-          };
-        } catch {
-          return {
-            ...project,
-            id: project._id.toString(),
-            _count: { logs: 0, messages: 0 },
-          };
-        }
-      })
+    const projects = Array.from(runtimeStore.projects.values()).sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
-
-    return NextResponse.json(projectsWithCounts);
-  } catch (error: any) {
-    console.error('[API] Error:', error);
-    // Return empty array instead of error to prevent client crash
-    return NextResponse.json([]);
+    return NextResponse.json({ projects });
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'فشل في جلب المشاريع' },
+      { status: 500 }
+    );
   }
 }

@@ -1,97 +1,57 @@
-// API Route: Manage settings (GitHub Token, Vercel Token, etc.)
-// يعمل حتى بدون MongoDB
-import { NextResponse } from 'next/server';
-import dbConnect from '@/lib/mongodb';
-import { SettingsModel } from '@/lib/models';
+// ============================================================
+// GET /api/settings — Get settings (mask tokens)
+// PUT /api/settings — Save tokens (in-memory)
+// ============================================================
+
+import { NextRequest, NextResponse } from 'next/server';
+import { runtimeStore } from '@/lib/runtime/memory';
+
+function maskToken(token: string | undefined): string {
+  if (!token) return '';
+  if (token.length <= 8) return '****';
+  return token.substring(0, 4) + '****' + token.substring(token.length - 4);
+}
 
 export async function GET() {
   try {
-    const conn = await dbConnect();
-
-    if (!conn) {
-      // Demo mode - return default settings
-      return NextResponse.json({
-        id: 'demo',
-        hasGithubToken: false,
-        hasVercelToken: false,
-        githubRepo: '',
-        updatedAt: new Date().toISOString(),
-        dbConnected: false,
-      });
-    }
-
-    let settings = await SettingsModel.findOne().lean();
-
-    if (!settings) {
-      settings = await SettingsModel.create({});
-    }
-
     return NextResponse.json({
-      id: settings._id.toString(),
-      hasGithubToken: !!settings.githubToken,
-      hasVercelToken: !!settings.vercelToken,
-      githubRepo: settings.githubRepo,
-      updatedAt: settings.updatedAt,
-      dbConnected: true,
+      githubToken: maskToken(runtimeStore.settings.githubToken),
+      vercelToken: maskToken(runtimeStore.settings.vercelToken),
+      githubRepo: runtimeStore.settings.githubRepo ?? '',
+      hasGithubToken: !!runtimeStore.settings.githubToken,
+      hasVercelToken: !!runtimeStore.settings.vercelToken,
     });
-  } catch (error: any) {
-    console.error('[API Settings] Error:', error);
-    // Return safe defaults instead of error
-    return NextResponse.json({
-      id: 'error',
-      hasGithubToken: false,
-      hasVercelToken: false,
-      githubRepo: '',
-      updatedAt: new Date().toISOString(),
-      dbConnected: false,
-    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'فشل في جلب الإعدادات' },
+      { status: 500 }
+    );
   }
 }
 
-export async function PUT(request: Request) {
+export async function PUT(request: NextRequest) {
   try {
-    const conn = await dbConnect();
-
-    if (!conn) {
-      return NextResponse.json({
-        success: false,
-        error: 'قاعدة البيانات غير متصلة. قم بربط MongoDB للحفظ.',
-        demo: true,
-      });
-    }
-
     const body = await request.json();
     const { githubToken, vercelToken, githubRepo } = body;
 
-    let settings = await SettingsModel.findOne();
-
-    if (!settings) {
-      settings = await SettingsModel.create({
-        githubToken: githubToken || undefined,
-        vercelToken: vercelToken || undefined,
-        githubRepo: githubRepo || undefined,
-      });
-    } else {
-      const updateData: Record<string, any> = {};
-      if (githubToken !== undefined) updateData.githubToken = githubToken || null;
-      if (vercelToken !== undefined) updateData.vercelToken = vercelToken || null;
-      if (githubRepo !== undefined) updateData.githubRepo = githubRepo || null;
-
-      settings = await SettingsModel.findByIdAndUpdate(
-        settings._id,
-        updateData,
-        { new: true }
-      );
+    if (githubToken !== undefined) {
+      runtimeStore.settings.githubToken = githubToken || undefined;
+    }
+    if (vercelToken !== undefined) {
+      runtimeStore.settings.vercelToken = vercelToken || undefined;
+    }
+    if (githubRepo !== undefined) {
+      runtimeStore.settings.githubRepo = githubRepo || undefined;
     }
 
     return NextResponse.json({
       success: true,
-      hasGithubToken: !!settings?.githubToken,
-      hasVercelToken: !!settings?.vercelToken,
-      githubRepo: settings?.githubRepo,
+      message: 'تم حفظ الإعدادات',
     });
-  } catch (error: any) {
-    console.error('[API Settings] Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'فشل في حفظ الإعدادات' },
+      { status: 500 }
+    );
   }
 }

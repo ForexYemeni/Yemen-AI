@@ -1,262 +1,258 @@
-// Agent Orchestrator - محرك التنسيق الذكي (15 Agents)
-// ينفذ حلقة ذاتية: تحليل → تصميم → تطوير → مراجعة → اختبار → تحسين → أمان → SEO → توثيق → نشر
-// Uses MongoDB via Mongoose
+// ============================================================
+// Master Orchestrator — ينسق جميع الوكلاء ويدار خط الإنتاج
+// ============================================================
 
-import { AnalyzerAgent } from './analyzer-agent';
-import { ArchitectAgent } from './architect-agent';
-import { DesignerAgent } from './designer-agent';
-import { FrontendAgent } from './frontend-agent';
-import { BackendAgent } from './backend-agent';
-import { DatabaseAgent } from './database-agent';
-import { DeveloperAgent } from './developer-agent';
-import { ReviewerAgent } from './reviewer-agent';
-import { TesterAgent } from './tester-agent';
-import { DebuggerAgent } from './debugger-agent';
-import { PerformanceAgent } from './performance-agent';
-import { SecurityAgent } from './security-agent';
-import { SeoAgent } from './seo-agent';
-import { DocumenterAgent } from './documenter-agent';
-import { DeployerAgent } from './deployer-agent';
-import { AgentContext, ProjectIdea } from './types';
-import dbConnect from '@/lib/mongodb';
-import { ProjectModel, AgentMessageModel } from '@/lib/models';
+import {
+  AgentType,
+  ProjectStatus,
+  AgentLog,
+  SharedContext as SharedContextType,
+} from '../runtime/types';
+import { SharedContext } from '../runtime/shared-context';
+import {
+  runtimeStore,
+  addLog,
+  addMessage,
+  updateProject,
+  generateLogId,
+  generateMsgId,
+} from '../runtime/memory';
+import { runProjectManagerAgent } from './project-manager';
+import { runUiUxAgent } from './ui-ux-agent';
+import { runFrontendAgent } from './frontend-agent';
+import { runBackendAgent } from './backend-agent';
+import { runDbGuidanceAgent } from './db-guidance';
+import { runNotificationsAgent } from './notifications';
+import { runQaDebugAgent } from './qa-debug';
+import { runDevOpsAgent } from './devops-agent';
 
-export class AgentOrchestrator {
-  private analyzer: AnalyzerAgent;
-  private architect: ArchitectAgent;
-  private designer: DesignerAgent;
-  private frontend: FrontendAgent;
-  private backend: BackendAgent;
-  private database: DatabaseAgent;
-  private developer: DeveloperAgent;
-  private reviewer: ReviewerAgent;
-  private tester: TesterAgent;
-  private debugger: DebuggerAgent;
-  private performance: PerformanceAgent;
-  private security: SecurityAgent;
-  private seo: SeoAgent;
-  private documenter: DocumenterAgent;
-  private deployer: DeployerAgent;
+type AgentRunner = (ctx: SharedContext) => Promise<void>;
 
-  constructor() {
-    this.analyzer = new AnalyzerAgent();
-    this.architect = new ArchitectAgent();
-    this.designer = new DesignerAgent();
-    this.frontend = new FrontendAgent();
-    this.backend = new BackendAgent();
-    this.database = new DatabaseAgent();
-    this.developer = new DeveloperAgent();
-    this.reviewer = new ReviewerAgent();
-    this.tester = new TesterAgent();
-    this.debugger = new DebuggerAgent();
-    this.performance = new PerformanceAgent();
-    this.security = new SecurityAgent();
-    this.seo = new SeoAgent();
-    this.documenter = new DocumenterAgent();
-    this.deployer = new DeployerAgent();
+const AGENT_RUNNERS: Record<AgentType, AgentRunner> = {
+  project_manager: runProjectManagerAgent,
+  ui_ux: runUiUxAgent,
+  frontend: runFrontendAgent,
+  backend: runBackendAgent,
+  db_guidance: runDbGuidanceAgent,
+  notifications: runNotificationsAgent,
+  qa_debug: runQaDebugAgent,
+  devops: runDevOpsAgent,
+};
+
+const AGENT_STATUS_MAP: Record<AgentType, ProjectStatus> = {
+  project_manager: 'analyzing',
+  ui_ux: 'designing',
+  frontend: 'frontend_dev',
+  backend: 'backend_dev',
+  db_guidance: 'db_setup',
+  notifications: 'notifications_setup',
+  qa_debug: 'testing',
+  devops: 'deploying',
+};
+
+export async function orchestrate(
+  projectId: string,
+  mode: 'new' | 'existing',
+  githubUrl?: string,
+  githubToken?: string
+): Promise<void> {
+  const project = runtimeStore.projects.get(projectId);
+  if (!project) {
+    throw new Error('المشروع غير موجود');
   }
 
-  async execute(idea: ProjectIdea): Promise<string> {
-    await dbConnect();
+  // Create shared context
+  const ctx = new SharedContext(projectId, project.idea, mode);
+  if (githubUrl) ctx.githubUrl = githubUrl;
+  ctx.sync();
 
-    const project = await ProjectModel.create({
-      name: idea.name,
-      description: idea.description,
-      idea: idea.idea,
-      status: 'pending',
-      progress: 0,
-      currentStep: 'في الانتظار',
-    });
+  // Update project status
+  updateProject(projectId, { status: 'analyzing', currentStep: 'تحليل المشروع' });
 
-    const projectId = project._id.toString();
+  addMessage(projectId, {
+    id: generateMsgId(),
+    projectId,
+    role: 'system',
+    content: mode === 'new' ? '🚀 بدأ خط إنتاج مشروع جديد' : '🔄 بدأ تحليل وتحسين مشروع موجود',
+    timestamp: new Date().toISOString(),
+  });
 
-    await AgentMessageModel.create({
-      projectId: project._id,
-      role: 'system',
-      content: `🚀 تم بدء مشروع جديد: "${idea.name}"\n\n💡 الفكرة: ${idea.idea}\n\nسيعمل نظام الوكلاء الذكي الآن بشكل ذاتي عبر 15 مرحلة:\n1️⃣ تحليل المتطلبات\n2️⃣ تصميم البنية\n3️⃣ تصميم الواجهات\n4️⃣ تطوير الواجهة الأمامية\n5️⃣ تطوير الخلفية\n6️⃣ بناء قاعدة البيانات\n7️⃣ البناء المتكامل\n8️⃣ مراجعة الكود\n9️⃣ اختبار الجودة\n🔟 إصلاح الأخطاء (عند الحاجة)\n1️⃣1️⃣ تحسين الأداء\n1️⃣2️⃣ فحص الأمان\n1️⃣3️⃣ تحسين SEO\n1️⃣4️⃣ التوثيق\n1️⃣5️⃣ النشر والرفع`,
-    });
-
-    // Start autonomous loop in background
-    this.runAutonomousLoop(projectId, idea).catch(async (error) => {
-      console.error('[منسق الوكلاء] خطأ فادح:', error);
-      await dbConnect();
-      await ProjectModel.findByIdAndUpdate(projectId, {
-        status: 'failed',
-        errorLog: `خطأ فادح: ${error.message}`,
-        progress: 0,
-        currentStep: 'فشل',
-      });
-      await AgentMessageModel.create({
-        projectId,
-        role: 'system',
-        content: `❌ حدث خطأ فادح: ${error.message}. يرجى المحاولة مرة أخرى.`,
-      });
-    });
-
-    return projectId;
-  }
-
-  private async runAutonomousLoop(projectId: string, idea: ProjectIdea): Promise<void> {
-    let context: AgentContext = {
-      projectId,
-      idea: idea.idea,
-      retryCount: 0,
-      maxRetries: 3,
-      progress: 0,
-    };
-
-    try {
-      // المرحلة 1: تحليل المتطلبات
-      console.log(`[منسق] المرحلة 1/15: تحليل المتطلبات - ${projectId}`);
-      context = await this.analyzer.execute(context);
-
-      // المرحلة 2: تصميم البنية
-      console.log(`[منسق] المرحلة 2/15: تصميم البنية - ${projectId}`);
-      context = await this.architect.execute(context);
-
-      // المرحلة 3: تصميم الواجهات
-      console.log(`[منسق] المرحلة 3/15: تصميم الواجهات - ${projectId}`);
-      context = await this.designer.execute(context);
-
-      // المرحلة 4: تطوير الواجهة الأمامية
-      console.log(`[منسق] المرحلة 4/15: تطوير الواجهة الأمامية - ${projectId}`);
-      context = await this.frontend.execute(context);
-
-      // المرحلة 5: تطوير الخلفية
-      console.log(`[منسق] المرحلة 5/15: تطوير الخلفية - ${projectId}`);
-      context = await this.backend.execute(context);
-
-      // المرحلة 6: بناء قاعدة البيانات
-      console.log(`[منسق] المرحلة 6/15: بناء قاعدة البيانات - ${projectId}`);
-      context = await this.database.execute(context);
-
-      // المرحلة 7: البناء المتكامل (المطور الرئيسي)
-      console.log(`[منسق] المرحلة 7/15: البناء المتكامل - ${projectId}`);
-      context = await this.developer.execute(context);
-
-      // إذا ظهرت أخطاء في البناء، حاول الإصلاح
-      if (context.errorLog) {
-        console.log(`[منسق] مرحلة إصلاح: تصحيح الأخطاء - ${projectId}`);
-        context = await this.debugger.execute(context);
-        if (!context.errorLog) {
-          await AgentMessageModel.create({
-            projectId,
-            role: 'system',
-            content: '🔄 إعادة البناء بعد إصلاح الأخطاء...',
-          });
-          context = await this.developer.execute(context);
-        }
-      }
-
-      // المرحلة 8: مراجعة الكود
-      if (!context.errorLog) {
-        console.log(`[منسق] المرحلة 8/15: مراجعة الكود - ${projectId}`);
-        context = await this.reviewer.execute(context);
-      }
-
-      // المرحلة 9: اختبار الجودة
-      if (!context.errorLog) {
-        console.log(`[منسق] المرحلة 9/15: اختبار الجودة - ${projectId}`);
-        context = await this.tester.execute(context);
-
-        // إذا فشلت الاختبارات، حاول الإصلاح
-        if (context.errorLog && context.retryCount < context.maxRetries) {
-          await AgentMessageModel.create({
-            projectId,
-            role: 'system',
-            content: '🔧 فشلت بعض الاختبارات - جاري الإصلاح التلقائي...',
-          });
-          context = await this.debugger.execute(context);
-          if (!context.errorLog) {
-            context = await this.tester.execute(context);
-          }
-        }
-      }
-
-      // المرحلة 10: إصلاح الأخطاء (إذا تبقت أخطاء)
-      if (context.errorLog && context.retryCount < context.maxRetries) {
-        console.log(`[منسق] المرحلة 10/15: إصلاح الأخطاء - ${projectId}`);
-        context = await this.debugger.execute(context);
-        if (!context.errorLog) {
-          context = await this.developer.execute(context);
-        }
-      }
-
-      // المرحلة 11: تحسين الأداء
-      if (!context.errorLog) {
-        console.log(`[منسق] المرحلة 11/15: تحسين الأداء - ${projectId}`);
-        context = await this.performance.execute(context);
-      }
-
-      // المرحلة 12: فحص الأمان
-      if (!context.errorLog) {
-        console.log(`[منسق] المرحلة 12/15: فحص الأمان - ${projectId}`);
-        context = await this.security.execute(context);
-      }
-
-      // المرحلة 13: تحسين SEO
-      if (!context.errorLog) {
-        console.log(`[منسق] المرحلة 13/15: تحسين SEO - ${projectId}`);
-        context = await this.seo.execute(context);
-      }
-
-      // المرحلة 14: التوثيق
-      if (!context.errorLog) {
-        console.log(`[منسق] المرحلة 14/15: التوثيق - ${projectId}`);
-        context = await this.documenter.execute(context);
-      }
-
-      // المرحلة 15: النشر
-      if (!context.errorLog) {
-        console.log(`[منسق] المرحلة 15/15: النشر - ${projectId}`);
-        context = await this.deployer.execute(context);
-      } else {
-        // حلقة إصلاح ذاتية نهائية
-        while (context.errorLog && context.retryCount < context.maxRetries) {
-          await AgentMessageModel.create({
-            projectId,
-            role: 'system',
-            content: `🔄 محاولة إصلاح نهائية ${context.retryCount + 1}/${context.maxRetries}...`,
-          });
-          context = await this.debugger.execute(context);
-
-          if (!context.errorLog) {
-            context = await this.developer.execute(context);
-            if (!context.errorLog) {
-              context = await this.tester.execute(context);
-            }
-          }
-        }
-
-        if (!context.errorLog) {
-          context = await this.performance.execute(context);
-          context = await this.security.execute(context);
-          context = await this.seo.execute(context);
-          context = await this.documenter.execute(context);
-          context = await this.deployer.execute(context);
-        } else {
-          await dbConnect();
-          await ProjectModel.findByIdAndUpdate(projectId, {
-            status: 'failed',
-            currentStep: 'فشل',
-          });
-          await AgentMessageModel.create({
-            projectId,
-            role: 'system',
-            content: `❌ لم يتم إكمال المشروع بعد ${context.maxRetries} محاولات إصلاح. يرجى مراجعة الأخطاء.`,
-          });
-        }
-      }
-    } catch (error: any) {
-      console.error(`[منسق] خطأ:`, error);
-      await dbConnect();
-      await ProjectModel.findByIdAndUpdate(projectId, {
-        status: 'failed',
-        errorLog: error.message,
-        currentStep: 'فشل',
-      });
+  try {
+    if (mode === 'new') {
+      await runNewProjectPipeline(ctx, projectId);
+    } else {
+      await runExistingProjectPipeline(ctx, projectId);
     }
+
+    // Mark project as completed
+    updateProject(projectId, {
+      status: 'completed',
+      progress: 100,
+      currentStep: 'مكتمل',
+      repoUrl: (ctx.getAgentResult('devops') as Record<string, unknown>)?.repoUrl as string | undefined,
+      deployUrl: (ctx.getAgentResult('devops') as Record<string, unknown>)?.deployUrl as string | undefined,
+    });
+
+    addMessage(projectId, {
+      id: generateMsgId(),
+      projectId,
+      role: 'system',
+      content: '✅ تم إنجاز المشروع بنجاح!',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : 'خطأ غير معروف';
+    updateProject(projectId, {
+      status: 'failed',
+      currentStep: `فشل: ${errMsg}`,
+    });
+
+    addMessage(projectId, {
+      id: generateMsgId(),
+      projectId,
+      role: 'system',
+      content: `❌ فشل المشروع: ${errMsg}`,
+      timestamp: new Date().toISOString(),
+    });
   }
 }
 
-export const orchestrator = new AgentOrchestrator();
+async function runNewProjectPipeline(ctx: SharedContext, projectId: string): Promise<void> {
+  // Pipeline: PM → UI/UX → Frontend → Backend → DB (if needed) → Notifications (if needed) → QA → DevOps
+  const pipeline: AgentType[] = [
+    'project_manager',
+    'ui_ux',
+    'frontend',
+    'backend',
+  ];
+
+  // Conditionally add DB and Notifications agents
+  // We'll check after PM analysis to determine if needed
+  // For now, always include them but they check needs internally
+  const needsDb = true; // Will be refined after PM runs
+  const needsNotif = true;
+
+  if (needsDb) pipeline.push('db_guidance');
+  if (needsNotif) pipeline.push('notifications');
+  pipeline.push('qa_debug', 'devops');
+
+  for (const agentType of pipeline) {
+    // Skip DB if not needed (check after PM runs)
+    if (agentType === 'db_guidance' && !ctx.needsDatabase) {
+      addLog(projectId, {
+        id: generateLogId(),
+        projectId,
+        agent: 'db_guidance',
+        action: 'skipped',
+        content: 'تم تخطي مستشار البيانات — لا حاجة لقاعدة بيانات',
+        status: 'warning',
+        timestamp: new Date().toISOString(),
+      });
+      continue;
+    }
+
+    if (agentType === 'notifications' && !ctx.needsNotifications) {
+      addLog(projectId, {
+        id: generateLogId(),
+        projectId,
+        agent: 'notifications',
+        action: 'skipped',
+        content: 'تم تخطي مهندس الإشعارات — لا حاجة للإشعارات',
+        status: 'warning',
+        timestamp: new Date().toISOString(),
+      });
+      continue;
+    }
+
+    const status = AGENT_STATUS_MAP[agentType];
+    updateProject(projectId, {
+      status,
+      currentStep: `وكيل: ${agentType}`,
+    });
+
+    addLog(projectId, {
+      id: generateLogId(),
+      projectId,
+      agent: agentType,
+      action: 'agent_start',
+      content: `بدأ تشغيل الوكيل ${agentType}`,
+      status: 'running',
+      timestamp: new Date().toISOString(),
+    });
+
+    const runner = AGENT_RUNNERS[agentType];
+    await runAgentWithRetry(ctx, agentType, runner, projectId);
+  }
+}
+
+async function runExistingProjectPipeline(ctx: SharedContext, projectId: string): Promise<void> {
+  // Pipeline for existing projects: PM (analyze) → Backend (modify) → QA → DevOps
+  const pipeline: AgentType[] = [
+    'project_manager',
+    'backend',
+    'qa_debug',
+    'devops',
+  ];
+
+  for (const agentType of pipeline) {
+    const status = AGENT_STATUS_MAP[agentType];
+    updateProject(projectId, {
+      status,
+      currentStep: `وكيل: ${agentType}`,
+    });
+
+    const runner = AGENT_RUNNERS[agentType];
+    await runAgentWithRetry(ctx, agentType, runner, projectId);
+  }
+}
+
+async function runAgentWithRetry(
+  ctx: SharedContext,
+  agentType: AgentType,
+  runner: AgentRunner,
+  projectId: string,
+  maxRetries: number = 3
+): Promise<void> {
+  let attempts = 0;
+
+  while (attempts < maxRetries) {
+    try {
+      await runner(ctx);
+      return; // Success
+    } catch (error) {
+      attempts++;
+      ctx.retryCount = attempts;
+      const errMsg = error instanceof Error ? error.message : 'خطأ غير معروف';
+
+      addLog(projectId, {
+        id: generateLogId(),
+        projectId,
+        agent: agentType,
+        action: 'agent_error',
+        content: `محاولة ${attempts}/${maxRetries}: ${errMsg}`,
+        status: attempts >= maxRetries ? 'error' : 'warning',
+        timestamp: new Date().toISOString(),
+      });
+
+      if (attempts >= maxRetries) {
+        // If QA fails after retries, try running QA once more with simpler analysis
+        if (agentType === 'qa_debug') {
+          addLog(projectId, {
+            id: generateLogId(),
+            projectId,
+            agent: 'qa_debug',
+            action: 'qa_fallback',
+            content: 'تم التخطي بسبب فشل الفحص — المتابعة بدون فحص مفصل',
+            status: 'warning',
+            timestamp: new Date().toISOString(),
+          });
+          return;
+        }
+        throw new Error(`فشل الوكيل ${agentType} بعد ${maxRetries} محاولات: ${errMsg}`);
+      }
+
+      // Wait before retry
+      await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
+    }
+  }
+}
